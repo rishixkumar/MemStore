@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "AmbientMemory",
+    "slug": "ambientmemory",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ambientmemory.app",
+      "infoPlist": {
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Ambient Memory captures the places you visit so you can remember your life without any effort.",
+        "NSLocationAlwaysUsageDescription": "Ambient Memory needs background location to passively capture memories throughout your day.",
+        "NSLocationWhenInUseUsageDescription": "Ambient Memory uses your location to name and remember the places you visit.",
+        "UIBackgroundModes": ["location", "fetch"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0F"
+      },
+      "permissions": [
+        "ACCESS_BACKGROUND_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Ambient Memory captures the places you visit so you can remember your life without any effort.",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ]
+    ]
+  }
+}
