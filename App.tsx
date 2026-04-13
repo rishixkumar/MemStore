@@ -6,7 +6,11 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Svg, { Path } from 'react-native-svg';
 import { initializeDatabase } from './src/storage/database';
 import { requestPermissionsAndStart } from './src/sensing/locationService';
-import { testGeminiConnection } from './src/intelligence/digestService';
+import {
+  getActiveLlmProvider,
+  testGeminiConnection,
+  testOllamaConnection,
+} from './src/intelligence/digestService';
 import TimelineScreen from './src/ui/screens/TimelineScreen';
 import PlacesScreen from './src/ui/screens/PlacesScreen';
 import CaptureSheet from './src/ui/components/CaptureSheet';
@@ -55,6 +59,9 @@ export default function App() {
         await initializeDatabase();
         const geminiOk = await testGeminiConnection();
         console.log('Gemini startup test result:', geminiOk ? 'success' : 'failed');
+        const ollamaOk = await testOllamaConnection();
+        console.log('Ollama startup test result:', ollamaOk ? 'success' : 'failed');
+        console.log('Active LLM provider after startup:', getActiveLlmProvider());
         await requestPermissionsAndStart();
       } catch (err: any) {
         Alert.alert('Permission Required', err.message || 'Something went wrong during setup.', [

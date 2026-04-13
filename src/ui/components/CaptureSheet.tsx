@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { Memory } from '../../models/Memory';
 import { insertMemory } from '../../storage/database';
 
@@ -23,6 +24,34 @@ interface Props {
 }
 
 type Mode = 'choose' | 'text' | 'recording' | 'saving';
+
+function SheetIcon({ kind }: { kind: 'note' | 'voice' }) {
+  if (kind === 'note') {
+    return (
+      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M4 17.5V20h2.5L17.8 8.7l-2.5-2.5L4 17.5Z"
+          stroke="#FFFFFF"
+          strokeWidth={1.8}
+          strokeLinejoin="round"
+        />
+        <Path d="M13.8 4.7 16.3 7.2" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" />
+      </Svg>
+    );
+  }
+
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 4a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 1 1-5 0v-4A2.5 2.5 0 0 1 12 4Z"
+        stroke="#FFFFFF"
+        strokeWidth={1.8}
+      />
+      <Path d="M8 10.5a4 4 0 1 0 8 0" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" />
+      <Path d="M12 15v4" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
 
 export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props) {
   const [mode, setMode] = useState<Mode>('choose');
@@ -85,6 +114,7 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
         note: noteText.trim(),
         importanceScore: 0.85,
         createdAt: timestamp,
+        memoryKind: 'note',
       };
       const inserted = await insertMemory(memory);
       if (!inserted) {
@@ -144,9 +174,11 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
         activityType: 'stationary',
         durationMinutes: 0,
         peopleIds: [],
-        note: `🎙 Voice memo (${recordingDuration}s)${uri ? ' - tap to play' : ''}`,
+        note: `Voice memo (${recordingDuration}s)`,
         importanceScore: 0.9,
         createdAt: timestamp,
+        audioUri: uri || null,
+        memoryKind: 'voice',
       };
       const inserted = await insertMemory(memory);
       if (!inserted) {
@@ -183,7 +215,9 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
             <>
               <Text style={styles.sheetTitle}>Capture a memory</Text>
               <TouchableOpacity style={styles.optionBtn} onPress={() => setMode('text')}>
-                <Text style={styles.optionIcon}>Note</Text>
+                <View style={styles.optionIconWrap}>
+                  <SheetIcon kind="note" />
+                </View>
                 <View>
                   <Text style={styles.optionLabel}>Quick note</Text>
                   <Text style={styles.optionSub}>Type what&apos;s on your mind</Text>
@@ -196,7 +230,9 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
                   startRecording();
                 }}
               >
-                <Text style={styles.optionIcon}>Mic</Text>
+                <View style={styles.optionIconWrap}>
+                  <SheetIcon kind="voice" />
+                </View>
                 <View>
                   <Text style={styles.optionLabel}>Voice memo</Text>
                   <Text style={styles.optionSub}>Record up to 2 minutes</Text>
@@ -232,7 +268,10 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
             <>
               <Text style={styles.sheetTitle}>Recording...</Text>
               <View style={styles.recordingCenter}>
-                <View style={[styles.recordDot, isRecording && styles.recordDotActive]} />
+                <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
+                  <Circle cx={14} cy={14} r={13} stroke="#2A2A3A" />
+                  <Circle cx={14} cy={14} r={isRecording ? 8 : 6} fill={isRecording ? '#E24B4A' : '#666680'} />
+                </Svg>
                 <Text style={styles.recordTimer}>{formatDuration(recordingDuration)}</Text>
                 <Text style={styles.recordHint}>Tap to stop and save</Text>
               </View>
@@ -285,7 +324,14 @@ const styles = StyleSheet.create({
     borderColor: '#2A2A3A',
     marginBottom: 10,
   },
-  optionIcon: { fontSize: 18, color: '#FFFFFF', width: 36 },
+  optionIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1E2130',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   optionLabel: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', marginBottom: 2 },
   optionSub: { fontSize: 12, color: '#666680' },
   textInput: {
@@ -304,8 +350,6 @@ const styles = StyleSheet.create({
   saveBtnDisabled: { opacity: 0.4 },
   saveBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
   recordingCenter: { alignItems: 'center', paddingVertical: 24, gap: 12 },
-  recordDot: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#666680' },
-  recordDotActive: { backgroundColor: '#E24B4A' },
   recordTimer: {
     fontSize: 40,
     fontWeight: '300',

@@ -12,6 +12,8 @@ export interface Memory {
   importanceScore: number;
   createdAt: number;
   onThisDayCaption?: string | null;
+  audioUri?: string | null;
+  memoryKind?: 'passive' | 'note' | 'voice';
 }
 
 export interface Place {

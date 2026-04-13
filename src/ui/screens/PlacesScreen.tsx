@@ -10,12 +10,15 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { Memory } from '../../models/Memory';
 import { getAllPlaces, getMemoriesForPlace, PlaceRow } from '../../storage/database';
+import MemoryDetailSheet from '../components/MemoryDetailSheet';
 
 export default function PlacesScreen() {
   const [places, setPlaces] = useState<PlaceRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<PlaceRow | null>(null);
   const [placeMemories, setPlaceMemories] = useState<Memory[]>([]);
+  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
+  const [memorySheetVisible, setMemorySheetVisible] = useState(false);
 
   const loadPlaces = useCallback(async () => {
     const all = await getAllPlaces();
@@ -38,6 +41,13 @@ export default function PlacesScreen() {
     setPlaceMemories(memories);
   };
 
+  const refreshSelectedPlace = useCallback(async () => {
+    if (!selectedPlace) return;
+    const memories = await getMemoriesForPlace(selectedPlace.name);
+    setPlaceMemories(memories);
+    await loadPlaces();
+  }, [loadPlaces, selectedPlace]);
+
   if (selectedPlace) {
     return (
       <View style={styles.container}>
@@ -55,16 +65,30 @@ export default function PlacesScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
-            <View style={styles.card}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.card}
+              onPress={() => {
+                setSelectedMemory(item);
+                setMemorySheetVisible(true);
+              }}
+            >
               <Text style={styles.cardTime}>
                 {format(new Date(item.timestamp), 'MMM d, yyyy · h:mm a')}
               </Text>
               {item.note && <Text style={styles.cardNote}>{item.note}</Text>}
-            </View>
+            </TouchableOpacity>
           )}
           ListEmptyComponent={
             <Text style={styles.emptyText}>No detailed memories yet for this place.</Text>
           }
+        />
+
+        <MemoryDetailSheet
+          visible={memorySheetVisible}
+          memory={selectedMemory}
+          onClose={() => setMemorySheetVisible(false)}
+          onMemoryChanged={refreshSelectedPlace}
         />
       </View>
     );

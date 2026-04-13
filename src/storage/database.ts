@@ -55,6 +55,14 @@ export async function initializeDatabase() {
   if (!hasOnThisDayCaption) {
     await db.execAsync('ALTER TABLE memories ADD COLUMN on_this_day_caption TEXT;');
   }
+  const hasAudioUri = memoryColumns.some((column) => column.name === 'audio_uri');
+  if (!hasAudioUri) {
+    await db.execAsync('ALTER TABLE memories ADD COLUMN audio_uri TEXT;');
+  }
+  const hasMemoryKind = memoryColumns.some((column) => column.name === 'memory_kind');
+  if (!hasMemoryKind) {
+    await db.execAsync("ALTER TABLE memories ADD COLUMN memory_kind TEXT DEFAULT 'passive';");
+  }
 
   return db;
 }
@@ -86,6 +94,26 @@ function getDayRange(date: string) {
   return { start, end };
 }
 
+function mapMemoryRow(row: any): Memory {
+  return {
+    id: row.id,
+    timestamp: row.timestamp,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    placeName: row.place_name,
+    placeType: row.place_type,
+    activityType: row.activity_type,
+    durationMinutes: row.duration_minutes,
+    peopleIds: JSON.parse(row.people_ids || '[]'),
+    note: row.note,
+    importanceScore: row.importance_score,
+    createdAt: row.created_at,
+    onThisDayCaption: row.on_this_day_caption,
+    audioUri: row.audio_uri,
+    memoryKind: row.memory_kind || (row.audio_uri ? 'voice' : row.note ? 'note' : 'passive'),
+  };
+}
+
 export async function insertMemory(memory: Memory): Promise<boolean> {
   const db = await getDatabase();
 
@@ -115,8 +143,8 @@ export async function insertMemory(memory: Memory): Promise<boolean> {
 
   await db.runAsync(
     `INSERT OR REPLACE INTO memories
-     (id, timestamp, latitude, longitude, place_name, place_type, activity_type, duration_minutes, people_ids, note, importance_score, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, timestamp, latitude, longitude, place_name, place_type, activity_type, duration_minutes, people_ids, note, importance_score, created_at, on_this_day_caption, audio_uri, memory_kind)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       memory.id,
       memory.timestamp,
@@ -130,6 +158,9 @@ export async function insertMemory(memory: Memory): Promise<boolean> {
       memory.note,
       memory.importanceScore,
       memory.createdAt,
+      memory.onThisDayCaption || null,
+      memory.audioUri || null,
+      memory.memoryKind || (memory.audioUri ? 'voice' : memory.note ? 'note' : 'passive'),
     ]
   );
 
@@ -175,21 +206,7 @@ async function upsertPlace(memory: Memory) {
 export async function getAllMemories(): Promise<Memory[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>('SELECT * FROM memories ORDER BY timestamp DESC');
-  return rows.map((row) => ({
-    id: row.id,
-    timestamp: row.timestamp,
-    latitude: row.latitude,
-    longitude: row.longitude,
-    placeName: row.place_name,
-    placeType: row.place_type,
-    activityType: row.activity_type,
-    durationMinutes: row.duration_minutes,
-    peopleIds: JSON.parse(row.people_ids || '[]'),
-    note: row.note,
-    importanceScore: row.importance_score,
-    createdAt: row.created_at,
-    onThisDayCaption: row.on_this_day_caption,
-  }));
+  return rows.map(mapMemoryRow);
 }
 
 export async function getMemoriesForDate(date: string): Promise<Memory[]> {
@@ -201,21 +218,7 @@ export async function getMemoriesForDate(date: string): Promise<Memory[]> {
     [start.getTime(), end.getTime()]
   );
 
-  return rows.map((row) => ({
-    id: row.id,
-    timestamp: row.timestamp,
-    latitude: row.latitude,
-    longitude: row.longitude,
-    placeName: row.place_name,
-    placeType: row.place_type,
-    activityType: row.activity_type,
-    durationMinutes: row.duration_minutes,
-    peopleIds: JSON.parse(row.people_ids || '[]'),
-    note: row.note,
-    importanceScore: row.importance_score,
-    createdAt: row.created_at,
-    onThisDayCaption: row.on_this_day_caption,
-  }));
+  return rows.map(mapMemoryRow);
 }
 
 export async function saveDigest(date: string, summary: string) {
@@ -242,6 +245,50 @@ export async function deleteDigestForDate(date: string) {
   await db.runAsync('DELETE FROM digests WHERE date = ?', [date]);
 }
 
+export async function updateMemory(
+  memoryId: string,
+  updates: Partial<Pick<Memory, 'note' | 'placeName' | 'audioUri' | 'memoryKind'>>
+) {
+  const db = await getDatabase();
+  const fields: string[] = [];
+  const values: Array<string | null> = [];
+
+  if (updates.note !== undefined) {
+    fields.push('note = ?');
+    values.push(updates.note);
+  }
+  if (updates.placeName !== undefined) {
+    fields.push('place_name = ?');
+    values.push(updates.placeName);
+  }
+  if (updates.audioUri !== undefined) {
+    fields.push('audio_uri = ?');
+    values.push(updates.audioUri);
+  }
+  if (updates.memoryKind !== undefined) {
+    fields.push('memory_kind = ?');
+    values.push(updates.memoryKind);
+  }
+
+  if (fields.length === 0) {
+    return;
+  }
+
+  values.push(memoryId);
+  await db.runAsync(`UPDATE memories SET ${fields.join(', ')} WHERE id = ?`, values);
+}
+
+export async function deleteMemory(memoryId: string) {
+  const db = await getDatabase();
+  await db.runAsync('DELETE FROM memories WHERE id = ?', [memoryId]);
+}
+
+export async function getMemoryById(memoryId: string): Promise<Memory | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<any>('SELECT * FROM memories WHERE id = ?', [memoryId]);
+  return row ? mapMemoryRow(row) : null;
+}
+
 export async function getAllPlaces(): Promise<PlaceRow[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
@@ -264,21 +311,7 @@ export async function getMemoriesForPlace(placeName: string): Promise<Memory[]> 
     'SELECT * FROM memories WHERE place_name = ? ORDER BY timestamp DESC',
     [placeName]
   );
-  return rows.map((row) => ({
-    id: row.id,
-    timestamp: row.timestamp,
-    latitude: row.latitude,
-    longitude: row.longitude,
-    placeName: row.place_name,
-    placeType: row.place_type,
-    activityType: row.activity_type,
-    durationMinutes: row.duration_minutes,
-    peopleIds: JSON.parse(row.people_ids || '[]'),
-    note: row.note,
-    importanceScore: row.importance_score,
-    createdAt: row.created_at,
-    onThisDayCaption: row.on_this_day_caption,
-  }));
+  return rows.map(mapMemoryRow);
 }
 
 export async function getOnThisDayMemories(daysAgo: number): Promise<Memory[]> {
@@ -298,21 +331,7 @@ export async function getOnThisDayMemories(daysAgo: number): Promise<Memory[]> {
     [windowStart.getTime(), windowEnd.getTime()]
   );
 
-  return rows.map((row) => ({
-    id: row.id,
-    timestamp: row.timestamp,
-    latitude: row.latitude,
-    longitude: row.longitude,
-    placeName: row.place_name,
-    placeType: row.place_type,
-    activityType: row.activity_type,
-    durationMinutes: row.duration_minutes,
-    peopleIds: JSON.parse(row.people_ids || '[]'),
-    note: row.note,
-    importanceScore: row.importance_score,
-    createdAt: row.created_at,
-    onThisDayCaption: row.on_this_day_caption,
-  }));
+  return rows.map(mapMemoryRow);
 }
 
 export async function saveOnThisDayCaption(memoryId: string, caption: string) {

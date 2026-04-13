@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Memory } from '../../models/Memory';
+import Svg, { Path } from 'react-native-svg';
 import { generateDailyDigest, generateOnThisDayCaption } from '../../intelligence/digestService';
 import {
   clearAllMemories,
@@ -19,6 +20,7 @@ import {
   getMemoriesForDate,
   getOnThisDayMemories,
 } from '../../storage/database';
+import MemoryDetailSheet from '../components/MemoryDetailSheet';
 import SettingsSheet from '../components/SettingsSheet';
 
 interface TimelineScreenProps {
@@ -56,12 +58,41 @@ function AudioWave() {
   );
 }
 
+function NoteGlyph() {
+  return (
+    <View style={styles.noteGlyph}>
+      <View style={styles.noteGlyphLineShort} />
+      <View style={styles.noteGlyphLineLong} />
+    </View>
+  );
+}
+
+function SettingsGlyph() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 9.25A2.75 2.75 0 1 0 12 14.75A2.75 2.75 0 1 0 12 9.25Z"
+        stroke="#8C8FA5"
+        strokeWidth={1.7}
+      />
+      <Path
+        d="M19 12a7.07 7.07 0 0 0-.08-1l2.02-1.57-1.92-3.32-2.42.87a7.6 7.6 0 0 0-1.74-1L14.5 3h-5l-.36 2.98c-.62.22-1.2.55-1.74 1l-2.42-.87-1.92 3.32L5.08 11c-.05.33-.08.66-.08 1s.03.67.08 1l-2.02 1.57 1.92 3.32 2.42-.87c.54.45 1.12.78 1.74 1L9.5 21h5l.36-2.98c.62-.22 1.2-.55 1.74-1l2.42.87 1.92-3.32L18.92 13c.05-.33.08-.66.08-1Z"
+        stroke="#8C8FA5"
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [digest, setDigest] = useState<string | null>(null);
   const [digestLoading, setDigestLoading] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
+  const [memorySheetVisible, setMemorySheetVisible] = useState(false);
   const [onThisDay, setOnThisDay] = useState<OnThisDayState>(null);
   const [onThisDayVisible, setOnThisDayVisible] = useState(false);
   const [onThisDayModalMemories, setOnThisDayModalMemories] = useState<Memory[]>([]);
@@ -186,13 +217,18 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
     setOnThisDayVisible(true);
   };
 
+  const openMemory = (memory: Memory) => {
+    setSelectedMemory(memory);
+    setMemorySheetVisible(true);
+  };
+
   const renderHeader = () => (
     <View>
       <View style={styles.headerMetaRow}>
         <Text style={styles.dateLabel}>{format(new Date(), 'EEEE, MMMM d')}</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={() => setSettingsVisible(true)} style={styles.iconButton}>
-            <Text style={styles.iconButtonText}>⚙</Text>
+            <SettingsGlyph />
           </TouchableOpacity>
           <TouchableOpacity onPress={handleClearAll} style={styles.clearBtn}>
             <Text style={styles.clearBtnText}>Clear</Text>
@@ -238,10 +274,15 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
   );
 
   const renderMemory = ({ item }: { item: Memory }) => (
-    <View style={[styles.card, { borderLeftColor: getImportanceAccent(item.importanceScore) }]}>
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => openMemory(item)}
+      style={[styles.card, { borderLeftColor: getImportanceAccent(item.importanceScore) }]}
+    >
       <View style={styles.cardHeader}>
         <View style={styles.placeNameRow}>
-          {item.placeType === 'manual' && <Text style={styles.manualIcon}>✏</Text>}
+          {item.memoryKind === 'note' && <NoteGlyph />}
+          {item.memoryKind === 'voice' && <AudioWave />}
           <Text style={styles.placeName} numberOfLines={2}>
             {item.placeName}
           </Text>
@@ -254,15 +295,14 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
         {format(new Date(item.timestamp), 'MMM d, yyyy · h:mm a')}
       </Text>
       {item.note &&
-        (item.note.startsWith('🎙') ? (
+        (item.memoryKind === 'voice' ? (
           <View style={styles.voiceNoteRow}>
-            <AudioWave />
             <Text style={styles.voiceNote}>{item.note}</Text>
           </View>
         ) : (
           <Text style={styles.note}>{item.note}</Text>
         ))}
-    </View>
+    </TouchableOpacity>
   );
 
   const displayedOnThisDayMemories =
@@ -344,6 +384,17 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
           setOnThisDay(null);
         }}
       />
+
+      <MemoryDetailSheet
+        visible={memorySheetVisible}
+        memory={selectedMemory}
+        onClose={() => setMemorySheetVisible(false)}
+        onMemoryChanged={async () => {
+          await loadMemories();
+          await loadDigest(true);
+          await loadOnThisDay();
+        }}
+      />
     </View>
   );
 }
@@ -368,7 +419,6 @@ const styles = StyleSheet.create({
   },
   header: { fontSize: 28, fontWeight: '700', color: '#FFFFFF' },
   iconButton: { padding: 6 },
-  iconButtonText: { fontSize: 16, color: '#666680' },
   clearBtn: { padding: 6 },
   clearBtnText: { fontSize: 13, color: '#534AB7' },
   list: { paddingHorizontal: 20, paddingBottom: 40 },
@@ -435,7 +485,25 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   placeNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 },
-  manualIcon: { fontSize: 12, marginRight: 6 },
+  noteGlyph: {
+    width: 14,
+    height: 14,
+    marginRight: 8,
+    justifyContent: 'center',
+    gap: 3,
+  },
+  noteGlyphLineShort: {
+    width: 9,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#D0D3E5',
+  },
+  noteGlyphLineLong: {
+    width: 12,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#D0D3E5',
+  },
   placeName: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', flex: 1 },
   badge: {
     backgroundColor: '#1E1A3E',

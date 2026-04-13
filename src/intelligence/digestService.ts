@@ -11,9 +11,12 @@ import { format } from 'date-fns';
 const DEV_MODE = true;
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+const OLLAMA_BASE_URL = (process.env.EXPO_PUBLIC_OLLAMA_BASE_URL || '').replace(/\/$/, '');
+const OLLAMA_MODEL = process.env.EXPO_PUBLIC_OLLAMA_MODEL || 'llama3.2';
 const digestRequestsInFlight = new Map<string, Promise<string>>();
 const digestRetryAfter = new Map<string, number>();
 const onThisDayRequestsInFlight = new Map<string, Promise<string>>();
+let llmProviderInUse: 'gemini' | 'ollama' | 'fallback' = 'fallback';
 
 type GeminiGenerationConfig = {
   maxOutputTokens: number;
@@ -28,6 +31,10 @@ type GeminiResponse = {
       }>;
     };
   }>;
+};
+
+type OllamaResponse = {
+  response?: string;
 };
 
 function formatMemoriesForPrompt(memories: Memory[]): string {
@@ -76,6 +83,71 @@ async function callGemini(prompt: string, generationConfig: GeminiGenerationConf
   return text;
 }
 
+async function callOllama(prompt: string, generationConfig: GeminiGenerationConfig) {
+  if (!OLLAMA_BASE_URL) {
+    throw new Error('Ollama base URL is not configured');
+  }
+
+  const ollamaUrl = `${OLLAMA_BASE_URL}/api/generate`;
+  console.log('Ollama prompt:', prompt);
+  const response = await fetch(ollamaUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: OLLAMA_MODEL,
+      prompt,
+      stream: false,
+      options: {
+        temperature: generationConfig.temperature,
+        num_predict: generationConfig.maxOutputTokens,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Ollama error ${response.status}: ${errText}`);
+  }
+
+  const data: OllamaResponse = await response.json();
+  console.log('Ollama raw response:', JSON.stringify(data, null, 2));
+  const text = data.response?.trim();
+  if (!text) {
+    throw new Error('Empty response from Ollama');
+  }
+  return text;
+}
+
+async function callPreferredModel(prompt: string, generationConfig: GeminiGenerationConfig) {
+  if (GEMINI_API_KEY) {
+    try {
+      const text = await callGemini(prompt, generationConfig);
+      llmProviderInUse = 'gemini';
+      return text;
+    } catch (err) {
+      console.warn('Gemini unavailable, attempting Ollama fallback.', err);
+    }
+  }
+
+  if (OLLAMA_BASE_URL) {
+    try {
+      const text = await callOllama(prompt, generationConfig);
+      llmProviderInUse = 'ollama';
+      return text;
+    } catch (err) {
+      console.warn('Ollama fallback unavailable.', err);
+      throw err;
+    }
+  }
+
+  llmProviderInUse = 'fallback';
+  throw new Error('No available LLM provider');
+}
+
+export function getActiveLlmProvider() {
+  return llmProviderInUse;
+}
+
 export async function testGeminiConnection(): Promise<boolean> {
   console.log('Testing Gemini connection. Key present:', Boolean(GEMINI_API_KEY));
   if (!GEMINI_API_KEY) {
@@ -92,6 +164,26 @@ export async function testGeminiConnection(): Promise<boolean> {
     return true;
   } catch (err) {
     console.warn('Gemini connection test failed:', err);
+    return false;
+  }
+}
+
+export async function testOllamaConnection(): Promise<boolean> {
+  console.log('Testing Ollama connection. Base URL present:', Boolean(OLLAMA_BASE_URL));
+  if (!OLLAMA_BASE_URL) {
+    console.warn('Ollama connection test skipped: missing EXPO_PUBLIC_OLLAMA_BASE_URL');
+    return false;
+  }
+
+  try {
+    const text = await callOllama('Say hello in one sentence.', {
+      maxOutputTokens: 40,
+      temperature: 0.2,
+    });
+    console.log('Ollama connection test succeeded:', text);
+    return true;
+  } catch (err) {
+    console.warn('Ollama connection test failed:', err);
     return false;
   }
 }
@@ -120,7 +212,7 @@ export async function generateDailyDigest(date: string, forceRefresh = false): P
     return existingRequest;
   }
 
-  if (!GEMINI_API_KEY) {
+  if (!GEMINI_API_KEY && !OLLAMA_BASE_URL) {
     return buildFallbackDigest(memories);
   }
 
@@ -146,7 +238,7 @@ Write only the summary, nothing else.`;
 
   const request = (async () => {
     try {
-      const summary = await callGemini(prompt, {
+      const summary = await callPreferredModel(prompt, {
         maxOutputTokens: 200,
         temperature: 0.8,
       });
@@ -161,6 +253,7 @@ Write only the summary, nothing else.`;
       } else {
         console.warn('Gemini digest unavailable; using fallback summary.', err);
       }
+      llmProviderInUse = 'fallback';
       return buildFallbackDigest(memories);
     } finally {
       digestRequestsInFlight.delete(date);
@@ -172,13 +265,13 @@ Write only the summary, nothing else.`;
 }
 
 export async function generateMemoryCaption(placeName: string, timestamp: number): Promise<string> {
-  if (!GEMINI_API_KEY) return '';
+  if (!GEMINI_API_KEY && !OLLAMA_BASE_URL) return '';
 
   const time = format(new Date(timestamp), 'h:mm a');
   const prompt = `Write a single evocative, poetic sentence (max 12 words) about someone being at ${placeName} at ${time}. No quotes. Just the sentence.`;
 
   try {
-    return await callGemini(prompt, {
+    return await callPreferredModel(prompt, {
       maxOutputTokens: 40,
       temperature: 1.0,
     });
@@ -200,7 +293,7 @@ export async function generateOnThisDayCaption(memory: Memory): Promise<string> 
   const formattedDate = format(new Date(memory.timestamp), 'MMMM d, yyyy');
   const fallback = `You were here on ${formattedDate}.`;
 
-  if (!GEMINI_API_KEY) {
+  if (!GEMINI_API_KEY && !OLLAMA_BASE_URL) {
     return fallback;
   }
 
@@ -208,7 +301,7 @@ export async function generateOnThisDayCaption(memory: Memory): Promise<string> 
 
   const request = (async () => {
     try {
-      const caption = await callGemini(prompt, {
+      const caption = await callPreferredModel(prompt, {
         maxOutputTokens: 50,
         temperature: 0.9,
       });
