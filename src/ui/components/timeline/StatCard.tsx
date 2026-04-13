@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { THEME } from '../../theme';
+import { useTheme } from '../../theme';
 
 type StatCardProps = {
   label: string;
@@ -10,11 +10,18 @@ type StatCardProps = {
 };
 
 export default function StatCard({ label, value, suffix, accentColor }: StatCardProps) {
+  const { theme } = useTheme();
+
   return (
-    <View style={styles.card}>
-      <Text style={styles.label}>{label}</Text>
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: theme.colors.bg.elevated, borderColor: theme.colors.border.subtle },
+      ]}
+    >
+      <Text style={[styles.label, { color: theme.colors.text.tertiary }]}>{label}</Text>
       <Text style={[styles.value, { color: accentColor }]}>{value}</Text>
-      <Text style={styles.suffix}>{suffix}</Text>
+      <Text style={[styles.suffix, { color: theme.colors.text.tertiary }]}>{suffix}</Text>
     </View>
   );
 }
@@ -23,26 +30,22 @@ const styles = StyleSheet.create({
   card: {
     width: 100,
     height: 120,
-    backgroundColor: THEME.colors.bg.elevated,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     borderWidth: 0.5,
-    borderColor: THEME.colors.border.subtle,
-    paddingHorizontal: THEME.spacing.lg,
-    paddingVertical: THEME.spacing.lg,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     justifyContent: 'space-between',
   },
   label: {
     fontSize: 9,
     letterSpacing: 1,
-    color: THEME.colors.text.tertiary,
-    fontWeight: THEME.font.weights.semibold,
+    fontWeight: '600',
   },
   value: {
     fontSize: 28,
-    fontWeight: THEME.font.weights.bold,
+    fontWeight: '700',
   },
   suffix: {
-    fontSize: THEME.font.sizes.sm,
-    color: THEME.colors.text.tertiary,
+    fontSize: 12,
   },
 });

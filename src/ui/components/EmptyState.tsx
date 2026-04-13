@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { THEME } from '../theme';
+import { useTheme } from '../theme';
 
 type EmptyStateProps = {
   title: string;
@@ -15,13 +15,18 @@ export default function EmptyState({
   actionLabel,
   onActionPress,
 }: EmptyStateProps) {
+  const { theme } = useTheme();
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.description}>{description}</Text>
+      <Text style={[styles.title, { color: theme.colors.text.primary }]}>{title}</Text>
+      <Text style={[styles.description, { color: theme.colors.text.secondary }]}>{description}</Text>
       {actionLabel && onActionPress ? (
-        <TouchableOpacity style={styles.button} onPress={onActionPress}>
-          <Text style={styles.buttonText}>{actionLabel}</Text>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: theme.colors.brand.primary }]}
+          onPress={onActionPress}
+        >
+          <Text style={[styles.buttonText, { color: theme.colors.text.inverse }]}>{actionLabel}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -33,31 +38,27 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: THEME.spacing.xxxl,
-    paddingTop: THEME.spacing.xxxl,
+    paddingHorizontal: 48,
+    paddingTop: 48,
   },
   title: {
-    color: THEME.colors.text.primary,
-    fontSize: THEME.font.sizes.xl,
-    fontWeight: THEME.font.weights.semibold,
-    marginBottom: THEME.spacing.sm,
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 8,
   },
   description: {
-    color: THEME.colors.text.secondary,
-    fontSize: THEME.font.sizes.md,
+    fontSize: 14,
     lineHeight: 22,
     textAlign: 'center',
   },
   button: {
-    marginTop: THEME.spacing.xl,
-    backgroundColor: THEME.colors.brand.primary,
-    borderRadius: THEME.radius.md,
+    marginTop: 24,
+    borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 14,
   },
   buttonText: {
-    color: THEME.colors.text.primary,
-    fontSize: THEME.font.sizes.md,
-    fontWeight: THEME.font.weights.semibold,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

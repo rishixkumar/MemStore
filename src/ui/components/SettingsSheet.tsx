@@ -11,7 +11,7 @@ import * as Location from 'expo-location';
 import { LOCATION_DISTANCE_INTERVAL_METERS, MEMORY_DEDUP_WINDOW_MS } from '../../config/app';
 import { clearAllMemories, getDataSummary } from '../../storage/database';
 import BottomSheetModal, { SheetHeader } from './BottomSheet';
-import { THEME } from '../theme';
+import { useTheme } from '../theme';
 
 interface Props {
   visible: boolean;
@@ -20,15 +20,32 @@ interface Props {
 }
 
 function InfoRow({ label, value, destructive = false }: { label: string; value: string; destructive?: boolean }) {
+  const { theme } = useTheme();
+
   return (
     <View style={styles.row}>
-      <Text style={[styles.rowLabel, destructive && styles.destructiveText]}>{label}</Text>
-      <Text style={[styles.rowValue, destructive && styles.destructiveText]}>{value}</Text>
+      <Text
+        style={[
+          styles.rowLabel,
+          { color: destructive ? theme.colors.semantic.danger : theme.colors.text.primary },
+        ]}
+      >
+        {label}
+      </Text>
+      <Text
+        style={[
+          styles.rowValue,
+          { color: destructive ? theme.colors.semantic.danger : theme.colors.text.secondary },
+        ]}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
 
 export default function SettingsSheet({ visible, onClose, onDataCleared }: Props) {
+  const { theme, mode, setMode } = useTheme();
   const [permissionStatus, setPermissionStatus] = useState('Checking...');
   const [summary, setSummary] = useState({ totalMemories: 0, totalPlaces: 0 });
 
@@ -67,10 +84,48 @@ export default function SettingsSheet({ visible, onClose, onDataCleared }: Props
     <BottomSheetModal visible={visible} onClose={onClose} panelStyle={styles.sheet}>
       <SheetHeader title="Settings" onClose={onClose} />
 
-      <Text style={styles.sectionTitle}>Sensing</Text>
+      <Text style={[styles.sectionTitle, { color: theme.colors.text.tertiary }]}>Appearance</Text>
+      <View style={[styles.segmentedControl, { backgroundColor: theme.colors.bg.overlay }]}>
+        <TouchableOpacity
+          style={[
+            styles.segment,
+            mode === 'dark' && { backgroundColor: theme.colors.bg.surface, borderColor: theme.colors.border.subtle },
+          ]}
+          onPress={() => setMode('dark')}
+          activeOpacity={0.85}
+        >
+          <Text
+            style={[
+              styles.segmentText,
+              { color: mode === 'dark' ? theme.colors.text.primary : theme.colors.text.secondary },
+            ]}
+          >
+            Dark
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.segment,
+            mode === 'light' && { backgroundColor: theme.colors.bg.surface, borderColor: theme.colors.border.subtle },
+          ]}
+          onPress={() => setMode('light')}
+          activeOpacity={0.85}
+        >
+          <Text
+            style={[
+              styles.segmentText,
+              { color: mode === 'light' ? theme.colors.text.primary : theme.colors.text.secondary },
+            ]}
+          >
+            Light
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={[styles.sectionTitle, { color: theme.colors.text.tertiary }]}>Sensing</Text>
       <TouchableOpacity style={styles.buttonRow} onPress={handleOpenSettings}>
-        <Text style={styles.rowLabel}>Background location</Text>
-        <Text style={styles.rowValue}>{permissionStatus}</Text>
+        <Text style={[styles.rowLabel, { color: theme.colors.text.primary }]}>Background location</Text>
+        <Text style={[styles.rowValue, { color: theme.colors.text.secondary }]}>{permissionStatus}</Text>
       </TouchableOpacity>
       <InfoRow label="Capture distance threshold" value={`${LOCATION_DISTANCE_INTERVAL_METERS}m`} />
       <InfoRow
@@ -78,14 +133,19 @@ export default function SettingsSheet({ visible, onClose, onDataCleared }: Props
         value={`${Math.round(MEMORY_DEDUP_WINDOW_MS / 60000)} min`}
       />
 
-      <Text style={styles.sectionTitle}>Data</Text>
+      <Text style={[styles.sectionTitle, { color: theme.colors.text.tertiary }]}>Data</Text>
       <InfoRow label="Total memories" value={`${summary.totalMemories}`} />
       <InfoRow label="Places learned" value={`${summary.totalPlaces}`} />
-      <TouchableOpacity style={styles.destructiveButton} onPress={handleClearAll}>
-        <Text style={styles.destructiveButtonText}>Clear all data</Text>
+      <TouchableOpacity
+        style={[styles.destructiveButton, { backgroundColor: theme.colors.bg.overlay }]}
+        onPress={handleClearAll}
+      >
+        <Text style={[styles.destructiveButtonText, { color: theme.colors.semantic.danger }]}>
+          Clear all data
+        </Text>
       </TouchableOpacity>
 
-      <Text style={styles.sectionTitle}>About</Text>
+      <Text style={[styles.sectionTitle, { color: theme.colors.text.tertiary }]}>About</Text>
       <InfoRow label="Version" value="0.1.0" />
       <InfoRow label="Built with" value="Expo + Gemini + Ollama" />
     </BottomSheetModal>
@@ -99,10 +159,28 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 12,
-    color: THEME.colors.text.tertiary,
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginTop: 8,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 14,
+    gap: 6,
+  },
+  segment: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   row: {
     flexDirection: 'row',
@@ -116,19 +194,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
-  rowLabel: { fontSize: 15, color: THEME.colors.text.primary },
-  rowValue: { fontSize: 14, color: THEME.colors.text.secondary },
+  rowLabel: { fontSize: 15 },
+  rowValue: { fontSize: 14 },
   destructiveButton: {
     marginTop: 6,
-    backgroundColor: THEME.colors.bg.overlay,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     padding: 14,
     alignItems: 'center',
   },
   destructiveButtonText: {
     fontSize: 15,
-    fontWeight: THEME.font.weights.semibold,
-    color: THEME.colors.semantic.danger,
+    fontWeight: '600',
   },
-  destructiveText: { color: THEME.colors.semantic.danger },
 });

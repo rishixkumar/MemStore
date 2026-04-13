@@ -16,7 +16,7 @@ import { Memory } from '../../models/Memory';
 import { insertMemory } from '../../storage/database';
 import BottomSheetModal from './BottomSheet';
 import { NoteIcon, VoiceIcon } from './Icons';
-import { THEME } from '../theme';
+import { useTheme } from '../theme';
 import { resolvePlaceFromCoordinates } from '../../sensing/placeLabel';
 
 interface Props {
@@ -28,6 +28,7 @@ interface Props {
 type Mode = 'choose' | 'text' | 'recording' | 'saving';
 
 export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props) {
+  const { theme } = useTheme();
   const [mode, setMode] = useState<Mode>('choose');
   const [noteText, setNoteText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -205,29 +206,36 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
     >
       {mode === 'choose' && (
         <>
-          <Text style={styles.sheetTitle}>Capture a memory</Text>
-          <TouchableOpacity style={styles.optionBtn} onPress={() => setMode('text')}>
-            <View style={styles.optionIconWrap}>
+          <Text style={[styles.sheetTitle, { color: theme.colors.text.primary }]}>Capture a memory</Text>
+          <TouchableOpacity
+            style={[styles.optionBtn, { backgroundColor: theme.colors.bg.overlay }]}
+            onPress={() => setMode('text')}
+          >
+            <View style={[styles.optionIconWrap, { backgroundColor: theme.colors.brand.soft }]}>
               <NoteIcon />
             </View>
             <View>
-              <Text style={styles.optionLabel}>Quick note</Text>
-              <Text style={styles.optionSub}>Type what&apos;s on your mind</Text>
+              <Text style={[styles.optionLabel, { color: theme.colors.text.primary }]}>Quick note</Text>
+              <Text style={[styles.optionSub, { color: theme.colors.text.secondary }]}>
+                Type what&apos;s on your mind
+              </Text>
             </View>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.optionBtn}
+            style={[styles.optionBtn, { backgroundColor: theme.colors.bg.overlay }]}
             onPress={() => {
               setMode('recording');
               startRecording();
             }}
           >
-            <View style={styles.optionIconWrap}>
+            <View style={[styles.optionIconWrap, { backgroundColor: theme.colors.brand.soft }]}>
               <VoiceIcon />
             </View>
             <View>
-              <Text style={styles.optionLabel}>Voice memo</Text>
-              <Text style={styles.optionSub}>Record up to 2 minutes</Text>
+              <Text style={[styles.optionLabel, { color: theme.colors.text.primary }]}>Voice memo</Text>
+              <Text style={[styles.optionSub, { color: theme.colors.text.secondary }]}>
+                Record up to 2 minutes
+              </Text>
             </View>
           </TouchableOpacity>
         </>
@@ -235,18 +243,20 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
 
       {mode === 'text' && (
         <>
-          <Text style={styles.sheetTitle}>Quick note</Text>
+          <Text style={[styles.sheetTitle, { color: theme.colors.text.primary }]}>Quick note</Text>
           <TextInput
             style={[
               styles.textInput,
               {
+                backgroundColor: theme.colors.bg.base,
+                color: theme.colors.text.primary,
                 borderColor: inputFocused
-                  ? THEME.colors.border.medium
-                  : THEME.colors.border.subtle,
+                  ? theme.colors.border.medium
+                  : theme.colors.border.subtle,
               },
             ]}
             placeholder="What's happening right now?"
-            placeholderTextColor={THEME.colors.text.tertiary}
+            placeholderTextColor={theme.colors.text.tertiary}
             value={noteText}
             onChangeText={setNoteText}
             onFocus={() => setInputFocused(true)}
@@ -256,18 +266,22 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
             maxLength={500}
           />
           <TouchableOpacity
-            style={[styles.saveBtn, !noteText.trim() && styles.saveBtnDisabled]}
+            style={[
+              styles.saveBtn,
+              { backgroundColor: theme.colors.brand.primary },
+              !noteText.trim() && styles.saveBtnDisabled,
+            ]}
             onPress={saveTextNote}
             disabled={!noteText.trim()}
           >
-            <Text style={styles.saveBtnText}>Save memory</Text>
+            <Text style={[styles.saveBtnText, { color: theme.colors.text.inverse }]}>Save memory</Text>
           </TouchableOpacity>
         </>
       )}
 
       {mode === 'recording' && (
         <>
-          <Text style={styles.sheetTitle}>Recording...</Text>
+          <Text style={[styles.sheetTitle, { color: theme.colors.text.primary }]}>Recording...</Text>
           <View style={styles.recordingCenter}>
             <View style={styles.recordPulseWrap}>
               <Animated.View
@@ -283,28 +297,35 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
                 ]}
               />
               <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
-                <Circle cx={14} cy={14} r={13} stroke={THEME.colors.border.medium} />
+                <Circle cx={14} cy={14} r={13} stroke={theme.colors.border.medium} />
                 <Circle
                   cx={14}
                   cy={14}
                   r={8}
-                  fill={isRecording ? THEME.colors.semantic.danger : THEME.colors.text.secondary}
+                  fill={isRecording ? theme.colors.semantic.danger : theme.colors.text.secondary}
                 />
               </Svg>
             </View>
-            <Text style={styles.recordTimer}>{formatDuration(recordingDuration)}</Text>
-            <Text style={styles.recordHint}>Tap to stop and save</Text>
+            <Text style={[styles.recordTimer, { color: theme.colors.text.primary }]}>
+              {formatDuration(recordingDuration)}
+            </Text>
+            <Text style={[styles.recordHint, { color: theme.colors.text.secondary }]}>
+              Tap to stop and save
+            </Text>
           </View>
-          <TouchableOpacity style={styles.saveBtn} onPress={stopRecording}>
-            <Text style={styles.saveBtnText}>Stop & save</Text>
+          <TouchableOpacity
+            style={[styles.saveBtn, { backgroundColor: theme.colors.brand.primary }]}
+            onPress={stopRecording}
+          >
+            <Text style={[styles.saveBtnText, { color: theme.colors.text.inverse }]}>Stop & save</Text>
           </TouchableOpacity>
         </>
       )}
 
       {mode === 'saving' && (
         <View style={styles.recordingCenter}>
-          <ActivityIndicator color={THEME.colors.brand.primary} size="large" />
-          <Text style={styles.recordHint}>Saving memory...</Text>
+          <ActivityIndicator color={theme.colors.brand.primary} size="large" />
+          <Text style={[styles.recordHint, { color: theme.colors.text.secondary }]}>Saving memory...</Text>
         </View>
       )}
     </BottomSheetModal>
@@ -316,57 +337,49 @@ const styles = StyleSheet.create({
     minHeight: 280,
   },
   sheetTitle: {
-    fontSize: THEME.font.sizes.xl,
-    fontWeight: THEME.font.weights.semibold,
-    color: THEME.colors.text.primary,
-    marginBottom: THEME.spacing.xl,
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 24,
   },
   optionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    padding: THEME.spacing.lg,
-    backgroundColor: THEME.colors.bg.overlay,
+    padding: 16,
     borderRadius: 14,
-    marginBottom: THEME.spacing.sm,
+    marginBottom: 8,
   },
   optionIconWrap: {
     width: 36,
     height: 36,
-    borderRadius: THEME.radius.full,
-    backgroundColor: THEME.colors.brand.soft,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
   optionLabel: {
     fontSize: 15,
-    fontWeight: THEME.font.weights.medium,
-    color: THEME.colors.text.primary,
+    fontWeight: '500',
     marginBottom: 2,
   },
-  optionSub: { fontSize: THEME.font.sizes.sm, color: THEME.colors.text.secondary },
+  optionSub: { fontSize: 12 },
   textInput: {
-    backgroundColor: THEME.colors.bg.base,
     borderRadius: 14,
     padding: 14,
-    color: THEME.colors.text.primary,
     fontSize: 15,
     minHeight: 100,
     textAlignVertical: 'top',
     borderWidth: 1,
-    marginBottom: THEME.spacing.lg,
+    marginBottom: 16,
   },
   saveBtn: {
-    backgroundColor: THEME.colors.brand.primary,
     borderRadius: 14,
-    padding: THEME.spacing.lg,
+    padding: 16,
     alignItems: 'center',
   },
   saveBtnDisabled: { opacity: 0.4 },
   saveBtnText: {
-    color: THEME.colors.text.primary,
     fontSize: 16,
-    fontWeight: THEME.font.weights.semibold,
+    fontWeight: '600',
   },
   recordingCenter: { alignItems: 'center', paddingVertical: 24, gap: 12 },
   recordPulseWrap: {
@@ -379,15 +392,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 52,
     height: 52,
-    borderRadius: THEME.radius.full,
+    borderRadius: 999,
     borderWidth: 2,
-    borderColor: THEME.colors.semantic.danger,
+    borderColor: '#E05252',
   },
   recordTimer: {
     fontSize: 40,
     fontWeight: '300',
-    color: THEME.colors.text.primary,
     fontVariant: ['tabular-nums'],
   },
-  recordHint: { fontSize: 13, color: THEME.colors.text.secondary },
+  recordHint: { fontSize: 13 },
 });

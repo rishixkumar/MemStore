@@ -1,29 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { initializeDatabase } from './src/storage/database';
 import { requestPermissionsAndStart } from './src/sensing/locationService';
-import {
-  getActiveLlmProvider,
-  testGeminiConnection,
-  testOllamaConnection,
-} from './src/intelligence/digestService';
 import TimelineScreen from './src/ui/screens/TimelineScreen';
 import PlacesScreen from './src/ui/screens/PlacesScreen';
 import CaptureSheet from './src/ui/components/CaptureSheet';
-import { THEME } from './src/ui/theme';
+import { ThemeProvider, useTheme } from './src/ui/theme';
 
 const Tab = createBottomTabNavigator();
 
 function TabBarIcon({ label, active }: { label: string; active: boolean }) {
-  const color = active ? THEME.colors.brand.primary : THEME.colors.text.tertiary;
+  const { theme } = useTheme();
+  const color = active ? theme.colors.brand.primary : theme.colors.text.tertiary;
 
   return (
     <View style={styles.tabIconWrap}>
-      {active && <View style={styles.activeDot} />}
+      {active && <View style={[styles.activeDot, { backgroundColor: theme.colors.brand.primary }]} />}
       {label === 'Timeline' ? (
         <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
           <Path d="M5 9.5h18" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
@@ -43,8 +39,8 @@ function TabBarIcon({ label, active }: { label: string; active: boolean }) {
             cx={14}
             cy={11.75}
             r={2.75}
-            fill={active ? THEME.colors.bg.base : 'none'}
-            stroke={active ? THEME.colors.bg.base : color}
+            fill={active ? theme.colors.bg.base : 'none'}
+            stroke={active ? theme.colors.bg.base : color}
             strokeWidth={1.6}
           />
         </Svg>
@@ -53,19 +49,16 @@ function TabBarIcon({ label, active }: { label: string; active: boolean }) {
   );
 }
 
-export default function App() {
+function AppShell() {
   const [captureVisible, setCaptureVisible] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { theme } = useTheme();
+  const navigationTheme = theme.isDark ? DarkTheme : DefaultTheme;
 
   useEffect(() => {
     async function bootstrap() {
       try {
         await initializeDatabase();
-        const geminiOk = await testGeminiConnection();
-        console.log('Gemini startup test result:', geminiOk ? 'success' : 'failed');
-        const ollamaOk = await testOllamaConnection();
-        console.log('Ollama startup test result:', ollamaOk ? 'success' : 'failed');
-        console.log('Active LLM provider after startup:', getActiveLlmProvider());
         await requestPermissionsAndStart();
       } catch (err: any) {
         Alert.alert('Permission Required', err.message || 'Something went wrong during setup.', [
@@ -77,12 +70,32 @@ export default function App() {
   }, []);
 
   return (
-    <NavigationContainer>
-      <StatusBar style="light" />
+    <NavigationContainer
+      theme={{
+        ...navigationTheme,
+        dark: theme.isDark,
+        colors: {
+          ...navigationTheme.colors,
+          primary: theme.colors.brand.primary,
+          background: theme.colors.bg.base,
+          card: theme.colors.bg.base,
+          text: theme.colors.text.primary,
+          border: theme.colors.border.subtle,
+          notification: theme.colors.brand.primary,
+        },
+      }}
+    >
+      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <Tab.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
-          tabBarStyle: styles.tabBar,
+          tabBarStyle: [
+            styles.tabBar,
+            {
+              backgroundColor: theme.colors.bg.base,
+              borderTopColor: theme.colors.border.subtle,
+            },
+          ],
           tabBarShowLabel: false,
           tabBarIcon: ({ focused }) => <TabBarIcon label={route.name} active={focused} />,
         })}
@@ -94,12 +107,18 @@ export default function App() {
       </Tab.Navigator>
 
       <TouchableOpacity
-        style={styles.fab}
+        style={[
+          styles.fab,
+          {
+            backgroundColor: theme.colors.brand.primary,
+            shadowColor: theme.colors.brand.glow,
+          },
+        ]}
         onPress={() => setCaptureVisible(true)}
         activeOpacity={0.85}
       >
-        <Text style={styles.fabIcon}>+</Text>
-        <Text style={styles.fabText}>Memory</Text>
+        <Text style={[styles.fabIcon, { color: theme.colors.text.inverse }]}>+</Text>
+        <Text style={[styles.fabText, { color: theme.colors.text.inverse }]}>Memory</Text>
       </TouchableOpacity>
 
       <CaptureSheet
@@ -111,28 +130,33 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
+  );
+}
+
 const styles = StyleSheet.create({
   tabIconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
     width: 72,
     height: 40,
-    gap: THEME.spacing.xs,
+    gap: 4,
   },
   activeDot: {
     width: 4,
     height: 4,
-    borderRadius: THEME.radius.full,
-    backgroundColor: THEME.colors.brand.primary,
-    marginBottom: THEME.spacing.xs,
+    borderRadius: 999,
+    marginBottom: 4,
   },
   tabBar: {
-    backgroundColor: THEME.colors.bg.base,
-    borderTopColor: THEME.colors.border.subtle,
     borderTopWidth: 0.5,
     height: 80,
     paddingBottom: 24,
-    paddingTop: THEME.spacing.md,
+    paddingTop: 12,
   },
   fab: {
     position: 'absolute',
@@ -140,13 +164,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: 120,
     height: 52,
-    borderRadius: THEME.radius.full,
-    backgroundColor: THEME.colors.brand.primary,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: THEME.spacing.sm,
-    shadowColor: THEME.colors.brand.glow,
+    gap: 8,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 16,
@@ -155,12 +177,10 @@ const styles = StyleSheet.create({
   fabIcon: {
     fontSize: 24,
     lineHeight: 26,
-    color: THEME.colors.text.primary,
-    fontWeight: THEME.font.weights.regular,
+    fontWeight: '400',
   },
   fabText: {
-    fontSize: THEME.font.sizes.md,
-    color: THEME.colors.text.primary,
-    fontWeight: THEME.font.weights.medium,
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

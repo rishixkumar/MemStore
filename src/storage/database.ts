@@ -175,7 +175,6 @@ export async function insertMemory(memory: Memory): Promise<boolean> {
   );
 
   await upsertPlace(memory);
-  await db.runAsync('DELETE FROM digests WHERE date = ?', [toLocalDateKey(memory.timestamp)]);
   return true;
 }
 
@@ -241,12 +240,18 @@ export async function saveDigest(date: string, summary: string, provider = 'fall
 
 export async function getDigestForDate(
   date: string
-): Promise<{ summary: string; provider: string } | null> {
+): Promise<{ summary: string; provider: string; createdAt: number } | null> {
   const db = await getDatabase();
-  const row = await db.getFirstAsync<any>('SELECT summary, provider FROM digests WHERE date = ?', [
+  const row = await db.getFirstAsync<any>('SELECT summary, provider, created_at FROM digests WHERE date = ?', [
     date,
   ]);
-  return row ? { summary: row.summary, provider: row.provider || 'fallback' } : null;
+  return row
+    ? {
+        summary: row.summary,
+        provider: row.provider || 'fallback',
+        createdAt: row.created_at,
+      }
+    : null;
 }
 
 export async function clearAllMemories() {

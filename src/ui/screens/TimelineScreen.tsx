@@ -37,7 +37,7 @@ import MemoryCard from '../components/timeline/MemoryCard';
 import OnThisDayCard from '../components/timeline/OnThisDayCard';
 import ProviderBadge from '../components/timeline/ProviderBadge';
 import StatCard from '../components/timeline/StatCard';
-import { THEME } from '../theme';
+import { useTheme } from '../theme';
 import {
   formatMemoryTime,
   groupItemsByDay,
@@ -51,6 +51,7 @@ interface TimelineScreenProps {
 type OnThisDayBucket = 365 | 30 | 7;
 
 type DigestState = DailyDigestResult | null;
+type TimelineLayoutMode = 'days' | 'places';
 
 type OnThisDayState = {
   daysAgo: OnThisDayBucket;
@@ -67,19 +68,51 @@ type StatCard = {
   accentColor: string;
 };
 
+type PlaceTimelineSection = {
+  title: string;
+  data: Memory[];
+  key: string;
+  latestTimestamp: number;
+  placeType: string;
+};
+
 const ON_THIS_DAY_PRIORITIES: Array<{ daysAgo: OnThisDayBucket; label: string }> = [
   { daysAgo: 365, label: '1 YEAR AGO' },
   { daysAgo: 30, label: '30 DAYS AGO' },
   { daysAgo: 7, label: '1 WEEK AGO' },
 ];
 
-function getImportanceAccent(score: number) {
-  if (score >= 0.9) return THEME.colors.brand.primary;
-  if (score >= 0.7) return THEME.colors.accent.teal;
-  return THEME.colors.border.medium;
+function buildPlaceSections(memories: Memory[], order: 'asc' | 'desc') {
+  const grouped = memories.reduce<Record<string, PlaceTimelineSection>>((acc, memory) => {
+    if (!acc[memory.placeName]) {
+      acc[memory.placeName] = {
+        key: memory.placeName,
+        title: memory.placeName,
+        data: [],
+        latestTimestamp: memory.timestamp,
+        placeType: memory.placeType,
+      };
+    }
+
+    acc[memory.placeName].data.push(memory);
+    acc[memory.placeName].latestTimestamp = Math.max(acc[memory.placeName].latestTimestamp, memory.timestamp);
+    return acc;
+  }, {});
+
+  return Object.values(grouped)
+    .map((section) => ({
+      ...section,
+      data: [...section.data].sort((a, b) =>
+        order === 'asc' ? a.timestamp - b.timestamp : b.timestamp - a.timestamp
+      ),
+    }))
+    .sort((a, b) =>
+      order === 'asc' ? a.latestTimestamp - b.latestTimestamp : b.latestTimestamp - a.latestTimestamp
+    );
 }
 
 export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
+  const { theme } = useTheme();
   const [memories, setMemories] = useState<Memory[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [digest, setDigest] = useState<DigestState>(null);
@@ -95,7 +128,19 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
   const [searchResults, setSearchResults] = useState<Memory[]>([]);
   const [searchFocused, setSearchFocused] = useState(false);
   const [stats, setStats] = useState({ streak: 0, places: 0, memories: 0 });
+  const [timelineMode, setTimelineMode] = useState<TimelineLayoutMode>('days');
+  const [placeSortOrder, setPlaceSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [collapsedPlaces, setCollapsedPlaces] = useState<Record<string, boolean>>({});
   const shimmer = useRef(new Animated.Value(0.15)).current;
+
+  const getImportanceAccent = useCallback(
+    (score: number) => {
+      if (score >= 0.9) return theme.colors.brand.primary;
+      if (score >= 0.7) return theme.colors.accent.teal;
+      return theme.colors.border.medium;
+    },
+    [theme]
+  );
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const isSearchActive = searchText.trim().length > 0;
@@ -213,35 +258,40 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
         label: 'DAY STREAK',
         value: stats.streak,
         suffix: 'days',
-        accentColor: THEME.colors.brand.primary,
+        accentColor: theme.colors.brand.primary,
       },
       {
         id: 'places',
         label: 'PLACES',
         value: stats.places,
         suffix: 'learned',
-        accentColor: THEME.colors.text.primary,
+        accentColor: theme.colors.text.primary,
       },
       {
         id: 'memories',
         label: 'MEMORIES',
         value: stats.memories,
         suffix: 'captured',
-        accentColor: THEME.colors.text.primary,
+        accentColor: theme.colors.text.primary,
       },
     ],
-    [stats]
+    [stats, theme]
   );
 
   const displayedMemories = isSearchActive ? searchResults : memories;
-  const sections = useMemo<SectionedItems<Memory>[]>(
+  const daySections = useMemo<SectionedItems<Memory>[]>(
     () => groupItemsByDay(displayedMemories),
     [displayedMemories]
   );
+  const placeSections = useMemo<PlaceTimelineSection[]>(
+    () => buildPlaceSections(displayedMemories, placeSortOrder),
+    [displayedMemories, placeSortOrder]
+  );
+  const sections = timelineMode === 'places' ? placeSections : daySections;
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadMemories(), loadDigest(true), loadOnThisDay(), loadStats()]);
+    await Promise.all([loadMemories(), loadDigest(false), loadOnThisDay(), loadStats()]);
     if (searchText.trim()) {
       await loadSearch(searchText);
     }
@@ -261,6 +311,13 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
     setMemorySheetVisible(true);
   };
 
+  const togglePlaceCollapsed = (placeName: string) => {
+    setCollapsedPlaces((current) => ({
+      ...current,
+      [placeName]: !current[placeName],
+    }));
+  };
+
   const renderMemoryCard = ({ item }: { item: Memory }) => (
     <MemoryCard
       memory={item}
@@ -269,9 +326,122 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
     />
   );
 
-  const renderSectionHeader = ({ section }: { section: SectionedItems<Memory> }) => (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionHeaderText}>{section.title}</Text>
+  const renderSectionHeader = ({
+    section,
+  }: {
+    section: SectionedItems<Memory> | PlaceTimelineSection;
+  }) => {
+    if (timelineMode === 'places') {
+      const placeSection = section as PlaceTimelineSection;
+      const isCollapsed = Boolean(collapsedPlaces[placeSection.key]);
+      return (
+        <TouchableOpacity
+          style={[styles.sectionHeader, { backgroundColor: theme.colors.bg.base }]}
+          onPress={() => togglePlaceCollapsed(placeSection.key)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.sectionHeaderMeta}>
+              <Text style={[styles.sectionHeaderText, { color: theme.colors.text.secondary }]}>
+                {placeSection.title}
+              </Text>
+              <Text style={[styles.sectionHeaderCount, { color: theme.colors.text.tertiary }]}>
+                {placeSection.data.length} memories
+              </Text>
+            </View>
+            <Text style={[styles.sectionHeaderAction, { color: theme.colors.brand.primary }]}>
+              {isCollapsed ? 'Expand' : 'Collapse'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <View style={[styles.sectionHeader, { backgroundColor: theme.colors.bg.base }]}>
+        <Text style={[styles.sectionHeaderText, { color: theme.colors.text.tertiary }]}>
+          {(section as SectionedItems<Memory>).title}
+        </Text>
+      </View>
+    );
+  };
+
+  const renderTimelineControls = () => (
+    <View style={styles.controlsWrap}>
+      <View style={[styles.segmentedControl, { backgroundColor: theme.colors.bg.overlay }]}>
+        <TouchableOpacity
+          style={[
+            styles.segment,
+            timelineMode === 'days' && {
+              backgroundColor: theme.colors.bg.surface,
+              borderColor: theme.colors.border.subtle,
+            },
+          ]}
+          onPress={() => setTimelineMode('days')}
+          activeOpacity={0.85}
+        >
+          <Text
+            style={[
+              styles.segmentText,
+              { color: timelineMode === 'days' ? theme.colors.text.primary : theme.colors.text.secondary },
+            ]}
+          >
+            By day
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.segment,
+            timelineMode === 'places' && {
+              backgroundColor: theme.colors.bg.surface,
+              borderColor: theme.colors.border.subtle,
+            },
+          ]}
+          onPress={() => setTimelineMode('places')}
+          activeOpacity={0.85}
+        >
+          <Text
+            style={[
+              styles.segmentText,
+              { color: timelineMode === 'places' ? theme.colors.text.primary : theme.colors.text.secondary },
+            ]}
+          >
+            By place
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {timelineMode === 'places' ? (
+        <View style={styles.inlineControlsRow}>
+          <TouchableOpacity
+            style={[styles.chip, { backgroundColor: theme.colors.bg.elevated, borderColor: theme.colors.border.subtle }]}
+            onPress={() => setPlaceSortOrder((current) => (current === 'desc' ? 'asc' : 'desc'))}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.chipText, { color: theme.colors.text.primary }]}>
+              {placeSortOrder === 'desc' ? 'Newest first' : 'Oldest first'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.chip, { backgroundColor: theme.colors.bg.elevated, borderColor: theme.colors.border.subtle }]}
+            onPress={() =>
+              setCollapsedPlaces(
+                Object.fromEntries(placeSections.map((section) => [section.key, true]))
+              )
+            }
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.chipText, { color: theme.colors.text.secondary }]}>Collapse all</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.chip, { backgroundColor: theme.colors.bg.elevated, borderColor: theme.colors.border.subtle }]}
+            onPress={() => setCollapsedPlaces({})}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.chipText, { color: theme.colors.text.secondary }]}>Expand all</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -283,7 +453,13 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
         right={
         <TouchableOpacity
           onPress={() => setSettingsVisible(true)}
-          style={styles.settingsButton}
+          style={[
+            styles.settingsButton,
+            {
+              backgroundColor: theme.colors.bg.elevated,
+              borderColor: theme.colors.border.subtle,
+            },
+          ]}
           activeOpacity={0.85}
         >
           <GearIcon />
@@ -303,7 +479,10 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
       <View
         style={[
           styles.searchBar,
-          { borderColor: searchFocused ? THEME.colors.border.strong : THEME.colors.border.subtle },
+          {
+            borderColor: searchFocused ? theme.colors.border.strong : theme.colors.border.subtle,
+            backgroundColor: theme.colors.bg.elevated,
+          },
         ]}
       >
         <SearchIcon />
@@ -313,24 +492,36 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
           placeholder="Search your memories..."
-          placeholderTextColor={THEME.colors.text.tertiary}
-          style={styles.searchInput}
+          placeholderTextColor={theme.colors.text.tertiary}
+          style={[styles.searchInput, { color: theme.colors.text.primary }]}
         />
       </View>
 
+      {isSearchActive ? null : renderTimelineControls()}
+
       {isSearchActive ? (
         <View style={styles.searchMetaRow}>
-          <Text style={styles.searchMetaText}>{searchResults.length} memories found</Text>
+          <Text style={[styles.searchMetaText, { color: theme.colors.text.tertiary }]}>
+            {searchResults.length} memories found
+          </Text>
         </View>
       ) : (
         <>
-          <View style={styles.digestCard}>
-            <View style={styles.digestAccentLine} />
-            <Text style={styles.digestLabel}>TODAY</Text>
+          <View
+            style={[
+              styles.digestCard,
+              {
+                backgroundColor: theme.colors.bg.elevated,
+                borderColor: theme.colors.border.subtle,
+              },
+            ]}
+          >
+            <View style={[styles.digestAccentLine, { backgroundColor: theme.colors.brand.primary }]} />
+            <Text style={[styles.digestLabel, { color: theme.colors.brand.primary }]}>TODAY</Text>
             {digestLoading ? (
               <DigestSkeleton opacity={shimmer} />
             ) : (
-              <Text style={styles.digestText}>
+              <Text style={[styles.digestText, { color: theme.colors.text.primary }]}>
                 {digest?.summary ||
                   'No memories yet today. Walk around and your day will begin to take shape.'}
               </Text>
@@ -365,11 +556,17 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
     onThisDayModalMemories.length > 0 ? onThisDayModalMemories : onThisDay?.memories || [];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg.base }]}>
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
-        renderItem={renderMemoryCard}
+        renderItem={({ item, section }) => {
+          if (timelineMode === 'places' && collapsedPlaces[(section as PlaceTimelineSection).key]) {
+            return null;
+          }
+
+          return renderMemoryCard({ item });
+        }}
         renderSectionHeader={renderSectionHeader}
         ListHeaderComponent={renderListHeader}
         stickySectionHeadersEnabled
@@ -378,7 +575,7 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={THEME.colors.brand.primary}
+            tintColor={theme.colors.brand.primary}
           />
         }
         contentContainerStyle={[
@@ -413,9 +610,13 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <View style={styles.modalMemoryRow}>
-              <Text style={styles.modalTimestamp}>{formatMemoryTime(item.timestamp)}</Text>
-              <Text style={styles.modalPlace}>{item.placeName}</Text>
-              {item.note ? <Text style={styles.modalNote}>{item.note}</Text> : null}
+              <Text style={[styles.modalTimestamp, { color: theme.colors.text.tertiary }]}>
+                {formatMemoryTime(item.timestamp)}
+              </Text>
+              <Text style={[styles.modalPlace, { color: theme.colors.text.primary }]}>{item.placeName}</Text>
+              {item.note ? (
+                <Text style={[styles.modalNote, { color: theme.colors.text.secondary }]}>{item.note}</Text>
+              ) : null}
             </View>
           )}
         />
@@ -441,7 +642,7 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
         memory={selectedMemory}
         onClose={() => setMemorySheetVisible(false)}
         onMemoryChanged={async () => {
-          await Promise.all([loadMemories(), loadDigest(true), loadOnThisDay(), loadStats()]);
+          await Promise.all([loadMemories(), loadDigest(false), loadOnThisDay(), loadStats()]);
           if (searchText.trim()) {
             await loadSearch(searchText);
           }
@@ -454,7 +655,6 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.bg.base,
     paddingTop: 64,
   },
   listContent: {
@@ -464,55 +664,87 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   headerContent: {
-    paddingBottom: THEME.spacing.md,
+    paddingBottom: 12,
   },
   settingsButton: {
     width: 36,
     height: 36,
-    borderRadius: THEME.radius.full,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: THEME.colors.bg.elevated,
     borderWidth: 0.5,
-    borderColor: THEME.colors.border.subtle,
   },
   statsRow: {
-    paddingHorizontal: THEME.spacing.xl,
-    gap: THEME.spacing.md,
-    marginBottom: THEME.spacing.lg,
+    paddingHorizontal: 24,
+    gap: 12,
+    marginBottom: 16,
   },
   searchBar: {
     height: 40,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     borderWidth: 1,
-    backgroundColor: THEME.colors.bg.elevated,
-    marginHorizontal: THEME.spacing.xl,
-    paddingHorizontal: THEME.spacing.lg,
+    marginHorizontal: 24,
+    paddingHorizontal: 16,
     alignItems: 'center',
     flexDirection: 'row',
-    gap: THEME.spacing.md,
-    marginBottom: THEME.spacing.lg,
+    gap: 12,
+    marginBottom: 16,
   },
   searchInput: {
     flex: 1,
-    color: THEME.colors.text.primary,
-    fontSize: THEME.font.sizes.md,
+    fontSize: 14,
+  },
+  controlsWrap: {
+    paddingHorizontal: 24,
+    gap: 10,
+    marginBottom: 18,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 14,
+    gap: 6,
+  },
+  segment: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  inlineControlsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    borderWidth: 0.5,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   searchMetaRow: {
-    paddingHorizontal: THEME.spacing.xl,
-    marginBottom: THEME.spacing.sm,
+    paddingHorizontal: 24,
+    marginBottom: 8,
   },
   searchMetaText: {
-    color: THEME.colors.text.tertiary,
-    fontSize: THEME.font.sizes.sm,
+    fontSize: 12,
   },
   digestCard: {
-    marginHorizontal: THEME.spacing.xl,
-    marginBottom: THEME.spacing.lg,
-    backgroundColor: THEME.colors.bg.elevated,
-    borderRadius: THEME.radius.lg,
+    marginHorizontal: 24,
+    marginBottom: 16,
+    borderRadius: 16,
     borderWidth: 0.5,
-    borderColor: THEME.colors.border.subtle,
     overflow: 'hidden',
     paddingHorizontal: 20,
     paddingVertical: 20,
@@ -523,24 +755,21 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     height: 2,
-    backgroundColor: THEME.colors.brand.primary,
   },
   digestLabel: {
-    color: THEME.colors.brand.primary,
-    fontSize: THEME.font.sizes.xs,
+    fontSize: 10,
     letterSpacing: 2,
-    fontWeight: THEME.font.weights.semibold,
-    marginBottom: THEME.spacing.md,
+    fontWeight: '600',
+    marginBottom: 12,
   },
   digestText: {
-    color: THEME.colors.text.primary,
-    fontSize: THEME.font.sizes.lg,
+    fontSize: 16,
     lineHeight: 26,
-    fontWeight: THEME.font.weights.regular,
+    fontWeight: '400',
     minHeight: 104,
   },
   digestFooter: {
-    marginTop: THEME.spacing.lg,
+    marginTop: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -548,44 +777,56 @@ const styles = StyleSheet.create({
   refreshButton: {
     width: 24,
     height: 24,
-    borderRadius: THEME.radius.full,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sectionHeader: {
-    backgroundColor: THEME.colors.bg.base,
-    paddingHorizontal: THEME.spacing.xl,
-    paddingVertical: THEME.spacing.sm,
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionHeaderMeta: {
+    flex: 1,
   },
   sectionHeaderText: {
-    color: THEME.colors.text.tertiary,
     fontSize: 11,
-    fontWeight: THEME.font.weights.semibold,
+    fontWeight: '600',
     letterSpacing: 1.5,
+  },
+  sectionHeaderCount: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  sectionHeaderAction: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   modalSheet: {
     minHeight: 280,
     maxHeight: '70%',
   },
   modalMemoryRow: {
-    paddingVertical: THEME.spacing.md,
+    paddingVertical: 12,
     borderBottomWidth: 0.5,
-    borderBottomColor: THEME.colors.border.subtle,
+    borderBottomColor: '#00000000',
   },
   modalTimestamp: {
-    color: THEME.colors.text.tertiary,
-    fontSize: THEME.font.sizes.sm,
-    marginBottom: THEME.spacing.xs,
+    fontSize: 12,
+    marginBottom: 4,
   },
   modalPlace: {
-    color: THEME.colors.text.primary,
-    fontSize: THEME.font.sizes.md,
-    fontWeight: THEME.font.weights.medium,
+    fontSize: 14,
+    fontWeight: '500',
   },
   modalNote: {
-    color: THEME.colors.text.secondary,
-    fontSize: THEME.font.sizes.md,
-    marginTop: THEME.spacing.xs,
+    fontSize: 14,
+    marginTop: 4,
     lineHeight: 20,
   },
 });

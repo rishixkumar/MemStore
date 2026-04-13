@@ -12,7 +12,7 @@ import { Memory } from '../../models/Memory';
 import { deleteMemory, updateMemory } from '../../storage/database';
 import BottomSheetModal, { SheetHeader } from './BottomSheet';
 import { NoteIcon, PauseIcon, PlayIcon, TrashIcon, VoiceIcon } from './Icons';
-import { THEME } from '../theme';
+import { useTheme } from '../theme';
 import { formatMemoryDateTime } from '../../utils/date';
 
 interface Props {
@@ -28,6 +28,7 @@ export default function MemoryDetailSheet({
   onClose,
   onMemoryChanged,
 }: Props) {
+  const { theme } = useTheme();
   const [draftNote, setDraftNote] = useState('');
   const [editing, setEditing] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -115,47 +116,82 @@ export default function MemoryDetailSheet({
         left={<View style={styles.kindIcon}>{memory.memoryKind === 'voice' ? <VoiceIcon /> : <NoteIcon />}</View>}
       />
 
-      <Text style={styles.placeName}>{memory.placeName}</Text>
-      <Text style={styles.timestamp}>{formatMemoryDateTime(memory.timestamp)}</Text>
+      <Text style={[styles.placeName, { color: theme.colors.text.primary }]}>{memory.placeName}</Text>
+      <Text style={[styles.timestamp, { color: theme.colors.text.tertiary }]}>
+        {formatMemoryDateTime(memory.timestamp)}
+      </Text>
 
       {editing ? (
         <TextInput
-          style={styles.editor}
+          style={[
+            styles.editor,
+            {
+              backgroundColor: theme.colors.bg.base,
+              borderColor: theme.colors.border.medium,
+              color: theme.colors.text.primary,
+            },
+          ]}
           multiline
           autoFocus
           value={draftNote}
           onChangeText={setDraftNote}
           placeholder="Add context to this memory"
-          placeholderTextColor={THEME.colors.text.secondary}
+          placeholderTextColor={theme.colors.text.secondary}
         />
       ) : (
-        <View style={styles.noteCard}>
-          <Text style={styles.noteText}>{memory.note || 'No additional note saved.'}</Text>
+        <View
+          style={[
+            styles.noteCard,
+            {
+              backgroundColor: theme.colors.bg.base,
+              borderColor: theme.colors.border.subtle,
+            },
+          ]}
+        >
+          <Text style={[styles.noteText, { color: theme.colors.text.secondary }]}>
+            {memory.note || 'No additional note saved.'}
+          </Text>
         </View>
       )}
 
       <View style={styles.actionsRow}>
         {memory.memoryKind === 'voice' && memory.audioUri && (
-          <TouchableOpacity style={styles.primaryAction} onPress={handlePlayPause}>
-            {playing ? <PauseIcon /> : <PlayIcon />}
-            <Text style={styles.primaryActionText}>{playing ? 'Pause' : 'Play'}</Text>
+          <TouchableOpacity
+            style={[styles.primaryAction, { backgroundColor: theme.colors.brand.primary }]}
+            onPress={handlePlayPause}
+          >
+            {playing ? <PauseIcon color={theme.colors.text.inverse} /> : <PlayIcon color={theme.colors.text.inverse} />}
+            <Text style={[styles.primaryActionText, { color: theme.colors.text.inverse }]}>
+              {playing ? 'Pause' : 'Play'}
+            </Text>
           </TouchableOpacity>
         )}
 
         {editing ? (
-          <TouchableOpacity style={styles.secondaryAction} onPress={handleSave}>
-            <Text style={styles.secondaryActionText}>Save changes</Text>
+          <TouchableOpacity
+            style={[styles.secondaryAction, { backgroundColor: theme.colors.bg.overlay }]}
+            onPress={handleSave}
+          >
+            <Text style={[styles.secondaryActionText, { color: theme.colors.text.primary }]}>
+              Save changes
+            </Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.secondaryAction} onPress={() => setEditing(true)}>
+          <TouchableOpacity
+            style={[styles.secondaryAction, { backgroundColor: theme.colors.bg.overlay }]}
+            onPress={() => setEditing(true)}
+          >
             <NoteIcon />
-            <Text style={styles.secondaryActionText}>Edit</Text>
+            <Text style={[styles.secondaryActionText, { color: theme.colors.text.primary }]}>Edit</Text>
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.destructiveAction} onPress={handleDelete}>
+        <TouchableOpacity
+          style={[styles.destructiveAction, { backgroundColor: theme.colors.bg.overlay }]}
+          onPress={handleDelete}
+        >
           <TrashIcon />
-          <Text style={styles.destructiveActionText}>Delete</Text>
+          <Text style={[styles.destructiveActionText, { color: theme.colors.semantic.danger }]}>Delete</Text>
         </TouchableOpacity>
       </View>
     </BottomSheetModal>
@@ -169,28 +205,22 @@ const styles = StyleSheet.create({
   kindIcon: { alignItems: 'center', justifyContent: 'center' },
   placeName: {
     fontSize: 22,
-    fontWeight: THEME.font.weights.bold,
-    color: THEME.colors.text.primary,
+    fontWeight: '700',
     marginBottom: 6,
   },
-  timestamp: { fontSize: 13, color: THEME.colors.text.tertiary, marginBottom: 18 },
+  timestamp: { fontSize: 13, marginBottom: 18 },
   noteCard: {
-    backgroundColor: THEME.colors.bg.base,
-    borderRadius: THEME.radius.lg,
-    padding: THEME.spacing.lg,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 0.5,
-    borderColor: THEME.colors.border.subtle,
     minHeight: 110,
   },
-  noteText: { fontSize: 15, lineHeight: 24, color: THEME.colors.text.secondary },
+  noteText: { fontSize: 15, lineHeight: 24 },
   editor: {
-    backgroundColor: THEME.colors.bg.base,
-    borderRadius: THEME.radius.lg,
-    padding: THEME.spacing.lg,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 0.5,
-    borderColor: THEME.colors.border.medium,
     minHeight: 120,
-    color: THEME.colors.text.primary,
     textAlignVertical: 'top',
   },
   actionsRow: {
@@ -203,42 +233,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: THEME.colors.brand.primary,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   primaryActionText: {
     fontSize: 14,
-    fontWeight: THEME.font.weights.semibold,
-    color: THEME.colors.text.primary,
+    fontWeight: '600',
   },
   secondaryAction: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: THEME.colors.bg.overlay,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   secondaryActionText: {
     fontSize: 14,
-    fontWeight: THEME.font.weights.semibold,
-    color: THEME.colors.text.primary,
+    fontWeight: '600',
   },
   destructiveAction: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: THEME.colors.bg.overlay,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   destructiveActionText: {
     fontSize: 14,
-    fontWeight: THEME.font.weights.semibold,
-    color: THEME.colors.semantic.danger,
+    fontWeight: '600',
   },
 });

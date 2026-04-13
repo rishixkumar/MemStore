@@ -11,6 +11,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { THEME } from '../theme';
+import { useTheme } from '../theme';
 
 type BottomSheetModalProps = {
   visible: boolean;
@@ -31,7 +32,8 @@ type SheetHeaderProps = {
 };
 
 export function SheetHandle({ width = 36 }: { width?: number }) {
-  return <View style={[styles.handle, { width }]} />;
+  const { theme } = useTheme();
+  return <View style={[styles.handle, { width, backgroundColor: theme.colors.border.medium }]} />;
 }
 
 export function SheetHeader({
@@ -41,19 +43,28 @@ export function SheetHeader({
   left,
   titleNumberOfLines = 1,
 }: SheetHeaderProps) {
+  const { theme } = useTheme();
+
   return (
     <View style={styles.headerRow}>
       <View style={styles.headerContent}>
         <View style={styles.headerTitleRow}>
           {left}
-          <Text style={styles.headerTitle} numberOfLines={titleNumberOfLines}>
+          <Text
+            style={[styles.headerTitle, { color: theme.colors.text.primary }]}
+            numberOfLines={titleNumberOfLines}
+          >
             {title}
           </Text>
         </View>
-        {subtitle ? <Text style={styles.headerSubtitle}>{subtitle}</Text> : null}
+        {subtitle ? (
+          <Text style={[styles.headerSubtitle, { color: theme.colors.text.secondary }]}>
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
       <TouchableOpacity onPress={onClose}>
-        <Text style={styles.closeText}>Close</Text>
+        <Text style={[styles.closeText, { color: theme.colors.brand.primary }]}>Close</Text>
       </TouchableOpacity>
     </View>
   );
@@ -68,6 +79,8 @@ export default function BottomSheetModal({
   handleWidth = 36,
   hideHandle = false,
 }: BottomSheetModalProps) {
+  const { theme } = useTheme();
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       {avoidKeyboard ? (
@@ -75,16 +88,24 @@ export default function BottomSheetModal({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.overlay}
         >
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-          <View style={[styles.sheet, panelStyle]}>
+          <TouchableOpacity
+            style={[styles.backdrop, { backgroundColor: theme.colors.shadow.overlay }]}
+            activeOpacity={1}
+            onPress={onClose}
+          />
+          <View style={[styles.sheet, { backgroundColor: theme.colors.bg.elevated }, panelStyle]}>
             {!hideHandle ? <SheetHandle width={handleWidth} /> : null}
             {children}
           </View>
         </KeyboardAvoidingView>
       ) : (
         <View style={styles.overlay}>
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-          <View style={[styles.sheet, panelStyle]}>
+          <TouchableOpacity
+            style={[styles.backdrop, { backgroundColor: theme.colors.shadow.overlay }]}
+            activeOpacity={1}
+            onPress={onClose}
+          />
+          <View style={[styles.sheet, { backgroundColor: theme.colors.bg.elevated }, panelStyle]}>
             {!hideHandle ? <SheetHandle width={handleWidth} /> : null}
             {children}
           </View>
@@ -113,7 +134,6 @@ const styles = StyleSheet.create({
   handle: {
     height: 4,
     borderRadius: THEME.radius.full,
-    backgroundColor: THEME.colors.border.medium,
     alignSelf: 'center',
     marginBottom: THEME.spacing.xl,
   },
@@ -136,15 +156,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: THEME.font.sizes.xl,
     fontWeight: THEME.font.weights.bold,
-    color: THEME.colors.text.primary,
   },
   headerSubtitle: {
     marginTop: THEME.spacing.xs,
     fontSize: THEME.font.sizes.md,
-    color: THEME.colors.text.secondary,
   },
   closeText: {
     fontSize: THEME.font.sizes.md,
-    color: THEME.colors.brand.primary,
   },
 });

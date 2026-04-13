@@ -1,27 +1,30 @@
 import React from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
-import { THEME } from '../../theme';
+import { useTheme } from '../../theme';
 
 export default function DigestSkeleton({ opacity }: { opacity: Animated.Value }) {
+  const { theme } = useTheme();
+
   return (
     <Animated.View style={[styles.wrap, { opacity }]}>
-      <View style={[styles.line, { width: '90%' }]} />
-      <View style={[styles.line, { width: '75%' }]} />
-      <View style={[styles.line, styles.shortLine, { width: '45%' }]} />
+      <View style={[styles.line, { width: '90%', backgroundColor: theme.colors.bg.overlay }]} />
+      <View style={[styles.line, { width: '75%', backgroundColor: theme.colors.bg.overlay }]} />
+      <View
+        style={[styles.line, styles.shortLine, { width: '45%', backgroundColor: theme.colors.bg.overlay }]}
+      />
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: THEME.spacing.md,
+    gap: 12,
     minHeight: 104,
     justifyContent: 'center',
   },
   line: {
     height: 14,
-    borderRadius: THEME.radius.full,
-    backgroundColor: THEME.colors.bg.overlay,
+    borderRadius: 999,
   },
   shortLine: {
     height: 10,

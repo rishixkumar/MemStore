@@ -1,5 +1,4 @@
 import {
-  deleteDigestForDate,
   getDigestForDate,
   getMemoriesForDate,
   saveDigest,
@@ -12,11 +11,11 @@ import {
 } from './digestPrompts';
 import { Memory } from '../models/Memory';
 
-const DEV_MODE = true;
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 const OLLAMA_BASE_URL = (process.env.EXPO_PUBLIC_OLLAMA_BASE_URL || '').replace(/\/$/, '');
 const OLLAMA_MODEL = process.env.EXPO_PUBLIC_OLLAMA_MODEL || 'llama3.2';
+const DIGEST_CACHE_TTL_MS = 10 * 60 * 1000;
 const digestRequestsInFlight = new Map<string, Promise<DailyDigestResult>>();
 const digestRetryAfter = new Map<string, number>();
 const onThisDayRequestsInFlight = new Map<string, Promise<string>>();
@@ -187,12 +186,10 @@ export async function generateDailyDigest(
   date: string,
   forceRefresh = false
 ): Promise<DailyDigestResult> {
-  if (DEV_MODE) {
-    await deleteDigestForDate(date);
-  }
-
   const cached = await getDigestForDate(date);
-  if (!DEV_MODE && cached && !forceRefresh) {
+  const hasFreshCache = cached ? Date.now() - cached.createdAt < DIGEST_CACHE_TTL_MS : false;
+
+  if (cached && !forceRefresh && hasFreshCache) {
     llmProviderInUse = (cached.provider as LlmProvider) || 'fallback';
     return { summary: cached.summary, provider: llmProviderInUse };
   }
@@ -209,6 +206,10 @@ export async function generateDailyDigest(
 
   const retryAt = digestRetryAfter.get(date) || 0;
   if (!forceRefresh && retryAt > Date.now()) {
+    if (cached) {
+      llmProviderInUse = (cached.provider as LlmProvider) || 'fallback';
+      return { summary: cached.summary, provider: llmProviderInUse };
+    }
     return { summary: buildFallbackDigest(memories), provider: 'fallback' };
   }
 
@@ -239,6 +240,10 @@ export async function generateDailyDigest(
         console.warn('Gemini digest temporarily rate limited; using fallback summary.');
       } else {
         console.warn('Gemini digest unavailable; using fallback summary.', err);
+      }
+      if (cached) {
+        llmProviderInUse = (cached.provider as LlmProvider) || 'fallback';
+        return { summary: cached.summary, provider: llmProviderInUse };
       }
       llmProviderInUse = 'fallback';
       return { summary: buildFallbackDigest(memories), provider: 'fallback' };

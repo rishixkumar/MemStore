@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { THEME } from '../theme';
+import { useTheme } from '../theme';
 
 type ScreenHeaderProps = {
   dateLabel: string;
@@ -9,11 +9,13 @@ type ScreenHeaderProps = {
 };
 
 export default function ScreenHeader({ dateLabel, title, right }: ScreenHeaderProps) {
+  const { theme } = useTheme();
+
   return (
     <View style={styles.row}>
       <View>
-        <Text style={styles.dateLabel}>{dateLabel}</Text>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={[styles.dateLabel, { color: theme.colors.text.tertiary }]}>{dateLabel}</Text>
+        <Text style={[styles.title, { color: theme.colors.text.primary }]}>{title}</Text>
       </View>
       {right ? <View>{right}</View> : null}
     </View>
@@ -25,17 +27,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: THEME.spacing.xl,
-    marginBottom: THEME.spacing.lg,
+    paddingHorizontal: 24,
+    marginBottom: 16,
   },
   dateLabel: {
-    fontSize: THEME.font.sizes.sm,
-    color: THEME.colors.text.tertiary,
-    marginBottom: THEME.spacing.sm,
+    fontSize: 12,
+    marginBottom: 8,
   },
   title: {
-    fontSize: THEME.font.sizes.xxxl,
-    color: THEME.colors.text.primary,
-    fontWeight: THEME.font.weights.bold,
+    fontSize: 32,
+    fontWeight: '700',
   },
 });

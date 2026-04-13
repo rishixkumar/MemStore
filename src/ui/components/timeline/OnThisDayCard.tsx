@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { Memory } from '../../../models/Memory';
-import { THEME } from '../../theme';
+import { useTheme } from '../../theme';
 import { format } from 'date-fns';
 
 type OnThisDayCardProps = {
@@ -17,50 +17,58 @@ export default function OnThisDayCard({
   caption,
   onPress,
 }: OnThisDayCardProps) {
+  const { theme } = useTheme();
+
   return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={onPress}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.place}>{memories[0].placeName}</Text>
-      <Text style={styles.date}>{format(new Date(memories[0].timestamp), 'MMM d, yyyy')}</Text>
-      <Text style={styles.caption}>{caption}</Text>
+    <TouchableOpacity
+      style={[
+        styles.card,
+        {
+          backgroundColor: theme.colors.accent.amberSoft,
+          borderColor: theme.colors.border.subtle,
+          borderLeftColor: theme.colors.accent.amber,
+        },
+      ]}
+      activeOpacity={0.9}
+      onPress={onPress}
+    >
+      <Text style={[styles.label, { color: theme.colors.accent.amber }]}>{label}</Text>
+      <Text style={[styles.place, { color: theme.colors.text.primary }]}>{memories[0].placeName}</Text>
+      <Text style={[styles.date, { color: theme.colors.text.secondary }]}>
+        {format(new Date(memories[0].timestamp), 'MMM d, yyyy')}
+      </Text>
+      <Text style={[styles.caption, { color: theme.colors.text.primary }]}>{caption}</Text>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: THEME.spacing.xl,
-    marginBottom: THEME.spacing.lg,
-    backgroundColor: THEME.colors.accent.amberSoft,
-    borderRadius: THEME.radius.lg,
+    marginHorizontal: 24,
+    marginBottom: 16,
+    borderRadius: 16,
     borderWidth: 0.5,
-    borderColor: THEME.colors.border.subtle,
     borderLeftWidth: 2.5,
-    borderLeftColor: THEME.colors.accent.amber,
-    paddingHorizontal: THEME.spacing.lg,
-    paddingVertical: THEME.spacing.lg,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
   label: {
-    color: THEME.colors.accent.amber,
-    fontSize: THEME.font.sizes.xs,
-    fontWeight: THEME.font.weights.semibold,
+    fontSize: 10,
+    fontWeight: '600',
     letterSpacing: 2,
-    marginBottom: THEME.spacing.sm,
+    marginBottom: 8,
   },
   place: {
-    color: THEME.colors.text.primary,
     fontSize: 15,
-    fontWeight: THEME.font.weights.medium,
-    marginBottom: THEME.spacing.xs,
+    fontWeight: '500',
+    marginBottom: 4,
   },
   date: {
-    color: THEME.colors.text.secondary,
-    fontSize: THEME.font.sizes.sm,
-    marginBottom: THEME.spacing.sm,
+    fontSize: 12,
+    marginBottom: 8,
   },
   caption: {
-    color: THEME.colors.text.primary,
-    fontSize: THEME.font.sizes.md,
+    fontSize: 14,
     lineHeight: 20,
   },
 });
