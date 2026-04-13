@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -13,9 +14,11 @@ import {
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 import { Memory } from '../../models/Memory';
 import { insertMemory } from '../../storage/database';
+import { NoteIcon, VoiceIcon } from './Icons';
+import { THEME } from '../theme';
 
 interface Props {
   visible: boolean;
@@ -25,41 +28,15 @@ interface Props {
 
 type Mode = 'choose' | 'text' | 'recording' | 'saving';
 
-function SheetIcon({ kind }: { kind: 'note' | 'voice' }) {
-  if (kind === 'note') {
-    return (
-      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M4 17.5V20h2.5L17.8 8.7l-2.5-2.5L4 17.5Z"
-          stroke="#FFFFFF"
-          strokeWidth={1.8}
-          strokeLinejoin="round"
-        />
-        <Path d="M13.8 4.7 16.3 7.2" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" />
-      </Svg>
-    );
-  }
-
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M12 4a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 1 1-5 0v-4A2.5 2.5 0 0 1 12 4Z"
-        stroke="#FFFFFF"
-        strokeWidth={1.8}
-      />
-      <Path d="M8 10.5a4 4 0 1 0 8 0" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" />
-      <Path d="M12 15v4" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
 export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props) {
   const [mode, setMode] = useState<Mode>('choose');
   const [noteText, setNoteText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [inputFocused, setInputFocused] = useState(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pulse = useRef(new Animated.Value(1)).current;
 
   const reset = () => {
     setMode('choose');
@@ -77,6 +54,28 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
     reset();
     onClose();
   };
+
+  useEffect(() => {
+    if (!isRecording) {
+      pulse.setValue(1);
+      return;
+    }
+
+    const animation = Animated.loop(
+      Animated.timing(pulse, {
+        toValue: 1.6,
+        duration: 1000,
+        useNativeDriver: true,
+      })
+    );
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+      pulse.setValue(1);
+    };
+  }, [isRecording, pulse]);
 
   const getCurrentLocation = async () => {
     try {
@@ -216,7 +215,7 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
               <Text style={styles.sheetTitle}>Capture a memory</Text>
               <TouchableOpacity style={styles.optionBtn} onPress={() => setMode('text')}>
                 <View style={styles.optionIconWrap}>
-                  <SheetIcon kind="note" />
+                  <NoteIcon />
                 </View>
                 <View>
                   <Text style={styles.optionLabel}>Quick note</Text>
@@ -231,7 +230,7 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
                 }}
               >
                 <View style={styles.optionIconWrap}>
-                  <SheetIcon kind="voice" />
+                  <VoiceIcon />
                 </View>
                 <View>
                   <Text style={styles.optionLabel}>Voice memo</Text>
@@ -245,11 +244,20 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
             <>
               <Text style={styles.sheetTitle}>Quick note</Text>
               <TextInput
-                style={styles.textInput}
+                style={[
+                  styles.textInput,
+                  {
+                    borderColor: inputFocused
+                      ? THEME.colors.border.medium
+                      : THEME.colors.border.subtle,
+                  },
+                ]}
                 placeholder="What's happening right now?"
-                placeholderTextColor="#555570"
+                placeholderTextColor={THEME.colors.text.tertiary}
                 value={noteText}
                 onChangeText={setNoteText}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
                 multiline
                 autoFocus
                 maxLength={500}
@@ -268,10 +276,29 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
             <>
               <Text style={styles.sheetTitle}>Recording...</Text>
               <View style={styles.recordingCenter}>
-                <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
-                  <Circle cx={14} cy={14} r={13} stroke="#2A2A3A" />
-                  <Circle cx={14} cy={14} r={isRecording ? 8 : 6} fill={isRecording ? '#E24B4A' : '#666680'} />
-                </Svg>
+                <View style={styles.recordPulseWrap}>
+                  <Animated.View
+                    style={[
+                      styles.recordPulseRing,
+                      {
+                        transform: [{ scale: pulse }],
+                        opacity: pulse.interpolate({
+                          inputRange: [1, 1.6],
+                          outputRange: [1, 0],
+                        }),
+                      },
+                    ]}
+                  />
+                  <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
+                    <Circle cx={14} cy={14} r={13} stroke={THEME.colors.border.medium} />
+                    <Circle
+                      cx={14}
+                      cy={14}
+                      r={8}
+                      fill={isRecording ? THEME.colors.semantic.danger : THEME.colors.text.secondary}
+                    />
+                  </Svg>
+                </View>
                 <Text style={styles.recordTimer}>{formatDuration(recordingDuration)}</Text>
                 <Text style={styles.recordHint}>Tap to stop and save</Text>
               </View>
@@ -283,7 +310,7 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
 
           {mode === 'saving' && (
             <View style={styles.recordingCenter}>
-              <ActivityIndicator color="#534AB7" size="large" />
+              <ActivityIndicator color={THEME.colors.brand.primary} size="large" />
               <Text style={styles.recordHint}>Saving memory...</Text>
             </View>
           )}
@@ -295,66 +322,96 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: THEME.colors.shadow.overlay },
   sheet: {
-    backgroundColor: '#16161E',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 48,
+    backgroundColor: THEME.colors.bg.elevated,
+    borderTopLeftRadius: THEME.radius.xl,
+    borderTopRightRadius: THEME.radius.xl,
+    padding: THEME.spacing.xl,
+    paddingBottom: THEME.spacing.xxxl,
     minHeight: 280,
   },
   handle: {
-    width: 36,
+    width: 40,
     height: 4,
-    backgroundColor: '#2A2A3A',
-    borderRadius: 2,
+    backgroundColor: THEME.colors.border.medium,
+    borderRadius: THEME.radius.full,
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: THEME.spacing.xl,
   },
-  sheetTitle: { fontSize: 18, fontWeight: '600', color: '#FFFFFF', marginBottom: 20 },
+  sheetTitle: {
+    fontSize: THEME.font.sizes.xl,
+    fontWeight: THEME.font.weights.semibold,
+    color: THEME.colors.text.primary,
+    marginBottom: THEME.spacing.xl,
+  },
   optionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    padding: 16,
-    backgroundColor: '#0A0A0F',
-    borderRadius: 12,
-    borderWidth: 0.5,
-    borderColor: '#2A2A3A',
-    marginBottom: 10,
+    padding: THEME.spacing.lg,
+    backgroundColor: THEME.colors.bg.overlay,
+    borderRadius: 14,
+    marginBottom: THEME.spacing.sm,
   },
   optionIconWrap: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1E2130',
+    borderRadius: THEME.radius.full,
+    backgroundColor: THEME.colors.brand.soft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  optionLabel: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', marginBottom: 2 },
-  optionSub: { fontSize: 12, color: '#666680' },
+  optionLabel: {
+    fontSize: 15,
+    fontWeight: THEME.font.weights.medium,
+    color: THEME.colors.text.primary,
+    marginBottom: 2,
+  },
+  optionSub: { fontSize: THEME.font.sizes.sm, color: THEME.colors.text.secondary },
   textInput: {
-    backgroundColor: '#0A0A0F',
-    borderRadius: 12,
+    backgroundColor: THEME.colors.bg.base,
+    borderRadius: 14,
     padding: 14,
-    color: '#FFFFFF',
+    color: THEME.colors.text.primary,
     fontSize: 15,
     minHeight: 100,
     textAlignVertical: 'top',
-    borderWidth: 0.5,
-    borderColor: '#2A2A3A',
-    marginBottom: 16,
+    borderWidth: 1,
+    marginBottom: THEME.spacing.lg,
   },
-  saveBtn: { backgroundColor: '#534AB7', borderRadius: 12, padding: 16, alignItems: 'center' },
+  saveBtn: {
+    backgroundColor: THEME.colors.brand.primary,
+    borderRadius: 14,
+    padding: THEME.spacing.lg,
+    alignItems: 'center',
+  },
   saveBtnDisabled: { opacity: 0.4 },
-  saveBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  saveBtnText: {
+    color: THEME.colors.text.primary,
+    fontSize: 16,
+    fontWeight: THEME.font.weights.semibold,
+  },
   recordingCenter: { alignItems: 'center', paddingVertical: 24, gap: 12 },
+  recordPulseWrap: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordPulseRing: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: THEME.radius.full,
+    borderWidth: 2,
+    borderColor: THEME.colors.semantic.danger,
+  },
   recordTimer: {
     fontSize: 40,
     fontWeight: '300',
-    color: '#FFFFFF',
+    color: THEME.colors.text.primary,
     fontVariant: ['tabular-nums'],
   },
-  recordHint: { fontSize: 13, color: '#666680' },
+  recordHint: { fontSize: 13, color: THEME.colors.text.secondary },
 });

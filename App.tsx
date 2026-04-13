@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { initializeDatabase } from './src/storage/database';
 import { requestPermissionsAndStart } from './src/sensing/locationService';
 import {
@@ -14,37 +14,41 @@ import {
 import TimelineScreen from './src/ui/screens/TimelineScreen';
 import PlacesScreen from './src/ui/screens/PlacesScreen';
 import CaptureSheet from './src/ui/components/CaptureSheet';
+import { THEME } from './src/ui/theme';
 
 const Tab = createBottomTabNavigator();
 
 function TabBarIcon({ label, active }: { label: string; active: boolean }) {
-  const color = active ? '#534AB7' : '#444460';
+  const color = active ? THEME.colors.brand.primary : THEME.colors.text.tertiary;
 
   return (
     <View style={styles.tabIconWrap}>
+      {active && <View style={styles.activeDot} />}
       {label === 'Timeline' ? (
-        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-          <Path d="M5 7H19" stroke={color} strokeWidth={2} strokeLinecap="round" />
-          <Path d="M5 12H16" stroke={color} strokeWidth={2} strokeLinecap="round" />
-          <Path d="M5 17H13" stroke={color} strokeWidth={2} strokeLinecap="round" />
+        <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
+          <Path d="M5 9.5h18" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+          <Path d="M5 14h14" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+          <Path d="M5 18.5h10" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
         </Svg>
       ) : (
-        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+        <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
           <Path
-            d="M12 21C15.5 17 18 14.3 18 10.8C18 7.05 15.31 4 12 4C8.69 4 6 7.05 6 10.8C6 14.3 8.5 17 12 21Z"
+            d="M14 6.5c-2.9 0-5.25 2.35-5.25 5.25 0 3.8 5.25 9.75 5.25 9.75s5.25-5.95 5.25-9.75c0-2.9-2.35-5.25-5.25-5.25Z"
+            fill={active ? color : 'none'}
             stroke={color}
             strokeWidth={2}
             strokeLinejoin="round"
           />
-          <Path d="M12 13.2C13.3255 13.2 14.4 12.1255 14.4 10.8C14.4 9.47452 13.3255 8.4 12 8.4C10.6745 8.4 9.6 9.47452 9.6 10.8C9.6 12.1255 10.6745 13.2 12 13.2Z" fill={active ? color : 'none'} stroke={color} strokeWidth={1.5} />
+          <Circle
+            cx={14}
+            cy={11.75}
+            r={2.75}
+            fill={active ? THEME.colors.bg.base : 'none'}
+            stroke={active ? THEME.colors.bg.base : color}
+            strokeWidth={1.6}
+          />
         </Svg>
       )}
-      <Text
-        numberOfLines={1}
-        style={[styles.tabLabel, { color, fontWeight: active ? '600' : '400' }]}
-      >
-        {label}
-      </Text>
     </View>
   );
 }
@@ -95,6 +99,7 @@ export default function App() {
         activeOpacity={0.85}
       >
         <Text style={styles.fabIcon}>+</Text>
+        <Text style={styles.fabText}>Memory</Text>
       </TouchableOpacity>
 
       <CaptureSheet
@@ -107,31 +112,55 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  tabIconWrap: { alignItems: 'center', gap: 4, width: 72 },
-  tabLabel: { fontSize: 10, flexShrink: 0 },
+  tabIconWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 72,
+    height: 40,
+    gap: THEME.spacing.xs,
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: THEME.radius.full,
+    backgroundColor: THEME.colors.brand.primary,
+    marginBottom: THEME.spacing.xs,
+  },
   tabBar: {
-    backgroundColor: '#16161E',
-    borderTopColor: '#2A2A3A',
+    backgroundColor: THEME.colors.bg.base,
+    borderTopColor: THEME.colors.border.subtle,
     borderTopWidth: 0.5,
-    height: 72,
-    paddingBottom: 16,
-    paddingTop: 10,
+    height: 80,
+    paddingBottom: 24,
+    paddingTop: THEME.spacing.md,
   },
   fab: {
     position: 'absolute',
-    bottom: 88,
+    bottom: 100,
     alignSelf: 'center',
-    width: 52,
+    width: 120,
     height: 52,
-    borderRadius: 26,
-    backgroundColor: '#534AB7',
+    borderRadius: THEME.radius.full,
+    backgroundColor: THEME.colors.brand.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#534AB7',
+    flexDirection: 'row',
+    gap: THEME.spacing.sm,
+    shadowColor: THEME.colors.brand.glow,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 12,
   },
-  fabIcon: { fontSize: 28, color: '#FFFFFF', lineHeight: 32 },
+  fabIcon: {
+    fontSize: 24,
+    lineHeight: 26,
+    color: THEME.colors.text.primary,
+    fontWeight: THEME.font.weights.regular,
+  },
+  fabText: {
+    fontSize: THEME.font.sizes.md,
+    color: THEME.colors.text.primary,
+    fontWeight: THEME.font.weights.medium,
+  },
 });

@@ -43,6 +43,7 @@ export async function initializeDatabase() {
       id TEXT PRIMARY KEY,
       date TEXT NOT NULL UNIQUE,
       summary TEXT NOT NULL,
+      provider TEXT DEFAULT 'fallback',
       created_at INTEGER NOT NULL
     );
 
@@ -51,9 +52,21 @@ export async function initializeDatabase() {
   `);
 
   const memoryColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(memories)');
-  const hasOnThisDayCaption = memoryColumns.some((column) => column.name === 'on_this_day_caption');
+  const hasOnThisDayCaption = memoryColumns.some(
+    (column) => column.name === 'on_this_day_caption' || column.name === 'otd_caption'
+  );
   if (!hasOnThisDayCaption) {
-    await db.execAsync('ALTER TABLE memories ADD COLUMN on_this_day_caption TEXT;');
+    await db.execAsync('ALTER TABLE memories ADD COLUMN otd_caption TEXT;');
+  }
+  const hasLegacyOnThisDayCaption = memoryColumns.some(
+    (column) => column.name === 'on_this_day_caption'
+  );
+  const hasOtdCaption = memoryColumns.some((column) => column.name === 'otd_caption');
+  if (hasLegacyOnThisDayCaption && !hasOtdCaption) {
+    await db.execAsync('ALTER TABLE memories ADD COLUMN otd_caption TEXT;');
+    await db.execAsync(
+      'UPDATE memories SET otd_caption = on_this_day_caption WHERE otd_caption IS NULL AND on_this_day_caption IS NOT NULL;'
+    );
   }
   const hasAudioUri = memoryColumns.some((column) => column.name === 'audio_uri');
   if (!hasAudioUri) {
@@ -62,6 +75,11 @@ export async function initializeDatabase() {
   const hasMemoryKind = memoryColumns.some((column) => column.name === 'memory_kind');
   if (!hasMemoryKind) {
     await db.execAsync("ALTER TABLE memories ADD COLUMN memory_kind TEXT DEFAULT 'passive';");
+  }
+  const digestColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(digests)');
+  const hasDigestProvider = digestColumns.some((column) => column.name === 'provider');
+  if (!hasDigestProvider) {
+    await db.execAsync("ALTER TABLE digests ADD COLUMN provider TEXT DEFAULT 'fallback';");
   }
 
   return db;
@@ -108,7 +126,7 @@ function mapMemoryRow(row: any): Memory {
     note: row.note,
     importanceScore: row.importance_score,
     createdAt: row.created_at,
-    onThisDayCaption: row.on_this_day_caption,
+    onThisDayCaption: row.otd_caption ?? row.on_this_day_caption,
     audioUri: row.audio_uri,
     memoryKind: row.memory_kind || (row.audio_uri ? 'voice' : row.note ? 'note' : 'passive'),
   };
@@ -143,7 +161,7 @@ export async function insertMemory(memory: Memory): Promise<boolean> {
 
   await db.runAsync(
     `INSERT OR REPLACE INTO memories
-     (id, timestamp, latitude, longitude, place_name, place_type, activity_type, duration_minutes, people_ids, note, importance_score, created_at, on_this_day_caption, audio_uri, memory_kind)
+     (id, timestamp, latitude, longitude, place_name, place_type, activity_type, duration_minutes, people_ids, note, importance_score, created_at, otd_caption, audio_uri, memory_kind)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       memory.id,
@@ -221,18 +239,22 @@ export async function getMemoriesForDate(date: string): Promise<Memory[]> {
   return rows.map(mapMemoryRow);
 }
 
-export async function saveDigest(date: string, summary: string) {
+export async function saveDigest(date: string, summary: string, provider = 'fallback') {
   const db = await getDatabase();
   await db.runAsync(
-    `INSERT OR REPLACE INTO digests (id, date, summary, created_at) VALUES (?, ?, ?, ?)`,
-    [`digest-${date}`, date, summary, Date.now()]
+    `INSERT OR REPLACE INTO digests (id, date, summary, provider, created_at) VALUES (?, ?, ?, ?, ?)`,
+    [`digest-${date}`, date, summary, provider, Date.now()]
   );
 }
 
-export async function getDigestForDate(date: string): Promise<string | null> {
+export async function getDigestForDate(
+  date: string
+): Promise<{ summary: string; provider: string } | null> {
   const db = await getDatabase();
-  const row = await db.getFirstAsync<any>('SELECT summary FROM digests WHERE date = ?', [date]);
-  return row?.summary || null;
+  const row = await db.getFirstAsync<any>('SELECT summary, provider FROM digests WHERE date = ?', [
+    date,
+  ]);
+  return row ? { summary: row.summary, provider: row.provider || 'fallback' } : null;
 }
 
 export async function clearAllMemories() {
@@ -317,10 +339,12 @@ export async function getMemoriesForPlace(placeName: string): Promise<Memory[]> 
 export async function getOnThisDayMemories(daysAgo: number): Promise<Memory[]> {
   const db = await getDatabase();
   const target = new Date();
+  target.setHours(0, 0, 0, 0);
   target.setDate(target.getDate() - daysAgo);
 
-  const windowStart = new Date(target.getTime() - 12 * 60 * 60 * 1000);
-  const windowEnd = new Date(target.getTime() + 12 * 60 * 60 * 1000);
+  const windowStart = new Date(target);
+  const windowEnd = new Date(target);
+  windowEnd.setHours(23, 59, 59, 999);
 
   const rows = await db.getAllAsync<any>(
     `SELECT *
@@ -336,10 +360,69 @@ export async function getOnThisDayMemories(daysAgo: number): Promise<Memory[]> {
 
 export async function saveOnThisDayCaption(memoryId: string, caption: string) {
   const db = await getDatabase();
-  await db.runAsync('UPDATE memories SET on_this_day_caption = ? WHERE id = ?', [
-    caption,
-    memoryId,
-  ]);
+  await db.runAsync('UPDATE memories SET otd_caption = ? WHERE id = ?', [caption, memoryId]);
+}
+
+export async function searchMemories(query: string): Promise<Memory[]> {
+  const db = await getDatabase();
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const likeQuery = `%${trimmed}%`;
+  const rows = await db.getAllAsync<any>(
+    `SELECT *
+     FROM memories
+     WHERE place_name LIKE ? OR COALESCE(note, '') LIKE ?
+     ORDER BY timestamp DESC
+     LIMIT 50`,
+    [likeQuery, likeQuery]
+  );
+
+  return rows.map(mapMemoryRow);
+}
+
+export async function getMemoryCount(): Promise<number> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM memories');
+  return row?.count || 0;
+}
+
+export async function getPlaceCount(): Promise<number> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM places');
+  return row?.count || 0;
+}
+
+export async function getDayStreak(): Promise<number> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ day: string }>(
+    `SELECT DISTINCT strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch', 'localtime') as day
+     FROM memories
+     ORDER BY day DESC`
+  );
+
+  const daySet = new Set(rows.map((row) => row.day));
+  let streak = 0;
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+
+  while (true) {
+    const year = cursor.getFullYear();
+    const month = `${cursor.getMonth() + 1}`.padStart(2, '0');
+    const day = `${cursor.getDate()}`.padStart(2, '0');
+    const key = `${year}-${month}-${day}`;
+
+    if (!daySet.has(key)) {
+      break;
+    }
+
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return streak;
 }
 
 export async function getDataSummary(): Promise<{ totalMemories: number; totalPlaces: number }> {

@@ -10,89 +10,16 @@ import {
 } from 'react-native';
 import { Audio } from 'expo-av';
 import { format } from 'date-fns';
-import Svg, { Path } from 'react-native-svg';
 import { Memory } from '../../models/Memory';
 import { deleteMemory, updateMemory } from '../../storage/database';
+import { NoteIcon, PauseIcon, PlayIcon, TrashIcon, VoiceIcon } from './Icons';
+import { THEME } from '../theme';
 
 interface Props {
   visible: boolean;
   memory: Memory | null;
   onClose: () => void;
   onMemoryChanged: () => void;
-}
-
-function ActionIcon({ type }: { type: 'edit' | 'trash' | 'play' | 'pause' | 'note' | 'voice' }) {
-  const color = type === 'trash' ? '#F08F92' : '#FFFFFF';
-
-  if (type === 'note') {
-    return (
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M4 17.5V20h2.5L17.8 8.7l-2.5-2.5L4 17.5Z"
-          stroke={color}
-          strokeWidth={1.8}
-          strokeLinejoin="round"
-        />
-        <Path d="M13.8 4.7 16.3 7.2" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-      </Svg>
-    );
-  }
-
-  if (type === 'voice') {
-    return (
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M12 4a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 1 1-5 0v-4A2.5 2.5 0 0 1 12 4Z"
-          stroke={color}
-          strokeWidth={1.8}
-        />
-        <Path d="M8 10.5a4 4 0 1 0 8 0" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-        <Path d="M12 15v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-      </Svg>
-    );
-  }
-
-  if (type === 'play') {
-    return (
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-        <Path d="M8 6.5v11l9-5.5-9-5.5Z" fill={color} />
-      </Svg>
-    );
-  }
-
-  if (type === 'pause') {
-    return (
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-        <Path d="M8 6h3v12H8zM13 6h3v12h-3z" fill={color} />
-      </Svg>
-    );
-  }
-
-  if (type === 'edit') {
-    return (
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M4 17.5V20h2.5L17.8 8.7l-2.5-2.5L4 17.5Z"
-          stroke={color}
-          strokeWidth={1.8}
-          strokeLinejoin="round"
-        />
-        <Path d="M13.8 4.7 16.3 7.2" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-      </Svg>
-    );
-  }
-
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M6 7h12M9 7V5h6v2M9.5 10.5v5M14.5 10.5v5M7.5 7l.7 11.2a1 1 0 0 0 1 .8h5.6a1 1 0 0 0 1-.8L16.5 7"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
 }
 
 export default function MemoryDetailSheet({
@@ -188,7 +115,7 @@ export default function MemoryDetailSheet({
           <View style={styles.handle} />
           <View style={styles.headerRow}>
             <View style={styles.kindRow}>
-              <ActionIcon type={memory.memoryKind === 'voice' ? 'voice' : 'note'} />
+              {memory.memoryKind === 'voice' ? <VoiceIcon /> : <NoteIcon />}
               <Text style={styles.headerTitle}>
                 {memory.memoryKind === 'voice' ? 'Voice memo' : 'Quick note'}
               </Text>
@@ -211,7 +138,7 @@ export default function MemoryDetailSheet({
               value={draftNote}
               onChangeText={setDraftNote}
               placeholder="Add context to this memory"
-              placeholderTextColor="#666680"
+              placeholderTextColor={THEME.colors.text.secondary}
             />
           ) : (
             <View style={styles.noteCard}>
@@ -222,7 +149,7 @@ export default function MemoryDetailSheet({
           <View style={styles.actionsRow}>
             {memory.memoryKind === 'voice' && memory.audioUri && (
               <TouchableOpacity style={styles.primaryAction} onPress={handlePlayPause}>
-                <ActionIcon type={playing ? 'pause' : 'play'} />
+                {playing ? <PauseIcon /> : <PlayIcon />}
                 <Text style={styles.primaryActionText}>{playing ? 'Pause' : 'Play'}</Text>
               </TouchableOpacity>
             )}
@@ -233,13 +160,13 @@ export default function MemoryDetailSheet({
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={styles.secondaryAction} onPress={() => setEditing(true)}>
-                <ActionIcon type="edit" />
+                <NoteIcon />
                 <Text style={styles.secondaryActionText}>Edit</Text>
               </TouchableOpacity>
             )}
 
             <TouchableOpacity style={styles.destructiveAction} onPress={handleDelete}>
-              <ActionIcon type="trash" />
+              <TrashIcon />
               <Text style={styles.destructiveActionText}>Delete</Text>
             </TouchableOpacity>
           </View>
@@ -251,50 +178,59 @@ export default function MemoryDetailSheet({
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: THEME.colors.shadow.overlay },
   sheet: {
-    backgroundColor: '#16161E',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
+    backgroundColor: THEME.colors.bg.elevated,
+    borderTopLeftRadius: THEME.radius.xl,
+    borderTopRightRadius: THEME.radius.xl,
+    padding: THEME.spacing.xl,
     paddingBottom: 38,
   },
   handle: {
     width: 36,
     height: 4,
-    borderRadius: 2,
-    backgroundColor: '#2A2A3A',
+    borderRadius: THEME.radius.full,
+    backgroundColor: THEME.colors.border.medium,
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: THEME.spacing.xl,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: THEME.spacing.lg,
   },
   kindRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: '#FFFFFF' },
-  closeText: { fontSize: 14, color: '#534AB7' },
-  placeName: { fontSize: 22, fontWeight: '700', color: '#FFFFFF', marginBottom: 6 },
-  timestamp: { fontSize: 13, color: '#666680', marginBottom: 18 },
+  headerTitle: {
+    fontSize: THEME.font.sizes.xl,
+    fontWeight: THEME.font.weights.semibold,
+    color: THEME.colors.text.primary,
+  },
+  closeText: { fontSize: 14, color: THEME.colors.brand.primary },
+  placeName: {
+    fontSize: 22,
+    fontWeight: THEME.font.weights.bold,
+    color: THEME.colors.text.primary,
+    marginBottom: 6,
+  },
+  timestamp: { fontSize: 13, color: THEME.colors.text.tertiary, marginBottom: 18 },
   noteCard: {
-    backgroundColor: '#0A0A0F',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: THEME.colors.bg.base,
+    borderRadius: THEME.radius.lg,
+    padding: THEME.spacing.lg,
     borderWidth: 0.5,
-    borderColor: '#2A2A3A',
+    borderColor: THEME.colors.border.subtle,
     minHeight: 110,
   },
-  noteText: { fontSize: 15, lineHeight: 24, color: '#C8C8E0' },
+  noteText: { fontSize: 15, lineHeight: 24, color: THEME.colors.text.secondary },
   editor: {
-    backgroundColor: '#0A0A0F',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: THEME.colors.bg.base,
+    borderRadius: THEME.radius.lg,
+    padding: THEME.spacing.lg,
     borderWidth: 0.5,
-    borderColor: '#2A2A3A',
+    borderColor: THEME.colors.border.medium,
     minHeight: 120,
-    color: '#FFFFFF',
+    color: THEME.colors.text.primary,
     textAlignVertical: 'top',
   },
   actionsRow: {
@@ -307,30 +243,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#534AB7',
-    borderRadius: 12,
+    backgroundColor: THEME.colors.brand.primary,
+    borderRadius: THEME.radius.md,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  primaryActionText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+  primaryActionText: {
+    fontSize: 14,
+    fontWeight: THEME.font.weights.semibold,
+    color: THEME.colors.text.primary,
+  },
   secondaryAction: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1E2130',
-    borderRadius: 12,
+    backgroundColor: THEME.colors.bg.overlay,
+    borderRadius: THEME.radius.md,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  secondaryActionText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+  secondaryActionText: {
+    fontSize: 14,
+    fontWeight: THEME.font.weights.semibold,
+    color: THEME.colors.text.primary,
+  },
   destructiveAction: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#251417',
-    borderRadius: 12,
+    backgroundColor: THEME.colors.bg.overlay,
+    borderRadius: THEME.radius.md,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  destructiveActionText: { fontSize: 14, fontWeight: '600', color: '#F08F92' },
+  destructiveActionText: {
+    fontSize: 14,
+    fontWeight: THEME.font.weights.semibold,
+    color: THEME.colors.semantic.danger,
+  },
 });

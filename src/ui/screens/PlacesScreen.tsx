@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
+  Modal,
   RefreshControl,
   StyleSheet,
   Text,
@@ -11,12 +12,14 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { Memory } from '../../models/Memory';
 import { getAllPlaces, getMemoriesForPlace, PlaceRow } from '../../storage/database';
 import MemoryDetailSheet from '../components/MemoryDetailSheet';
+import { THEME } from '../theme';
 
 export default function PlacesScreen() {
   const [places, setPlaces] = useState<PlaceRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<PlaceRow | null>(null);
   const [placeMemories, setPlaceMemories] = useState<Memory[]>([]);
+  const [placeSheetVisible, setPlaceSheetVisible] = useState(false);
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
   const [memorySheetVisible, setMemorySheetVisible] = useState(false);
 
@@ -39,6 +42,7 @@ export default function PlacesScreen() {
     setSelectedPlace(place);
     const memories = await getMemoriesForPlace(place.name);
     setPlaceMemories(memories);
+    setPlaceSheetVisible(true);
   };
 
   const refreshSelectedPlace = useCallback(async () => {
@@ -48,85 +52,42 @@ export default function PlacesScreen() {
     await loadPlaces();
   }, [loadPlaces, selectedPlace]);
 
-  if (selectedPlace) {
-    return (
-      <View style={styles.container}>
-        <TouchableOpacity onPress={() => setSelectedPlace(null)} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>{'<'} All places</Text>
-        </TouchableOpacity>
-        <Text style={styles.header} numberOfLines={2}>
-          {selectedPlace.name}
-        </Text>
-        <Text style={styles.placeSubtitle}>
-          {selectedPlace.visitCount} visit{selectedPlace.visitCount !== 1 ? 's' : ''}
-        </Text>
-        <FlatList
-          data={placeMemories}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.card}
-              onPress={() => {
-                setSelectedMemory(item);
-                setMemorySheetVisible(true);
-              }}
-            >
-              <Text style={styles.cardTime}>
-                {format(new Date(item.timestamp), 'MMM d, yyyy · h:mm a')}
-              </Text>
-              {item.note && <Text style={styles.cardNote}>{item.note}</Text>}
-            </TouchableOpacity>
-          )}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No detailed memories yet for this place.</Text>
-          }
-        />
-
-        <MemoryDetailSheet
-          visible={memorySheetVisible}
-          memory={selectedMemory}
-          onClose={() => setMemorySheetVisible(false)}
-          onMemoryChanged={refreshSelectedPlace}
-        />
-      </View>
-    );
-  }
-
   const maxVisits = Math.max(...places.map((p) => p.visitCount), 1);
+  const placeSubtitle = useMemo(() => {
+    if (!selectedPlace) return '';
+    return `${selectedPlace.visitCount} visit${selectedPlace.visitCount !== 1 ? 's' : ''}`;
+  }, [selectedPlace]);
 
-  const renderPlace = ({ item, index }: { item: PlaceRow; index: number }) => (
-    <TouchableOpacity style={styles.card} onPress={() => selectPlace(item)} activeOpacity={0.7}>
+  const renderPlace = ({ item }: { item: PlaceRow }) => (
+    <TouchableOpacity style={styles.card} onPress={() => selectPlace(item)} activeOpacity={0.88}>
       <View style={styles.placeHeader}>
-        <View style={styles.placeRank}>
-          <Text style={styles.placeRankText}>{index + 1}</Text>
-        </View>
         <View style={styles.placeInfo}>
           <Text style={styles.placeName} numberOfLines={2}>
             {item.name}
           </Text>
+          <View style={styles.visitBar}>
+            <View
+              style={[
+                styles.visitBarFill,
+                { width: `${Math.min(100, (item.visitCount / maxVisits) * 100)}%` },
+              ]}
+            />
+          </View>
           <Text style={styles.placeMeta}>
-            {item.visitCount} visit{item.visitCount !== 1 ? 's' : ''} · last{' '}
+            {item.visitCount} visit{item.visitCount !== 1 ? 's' : ''} · Last visited{' '}
             {formatDistanceToNow(new Date(item.lastVisited), { addSuffix: true })}
           </Text>
         </View>
-        <Text style={styles.placeArrow}>{'>'}</Text>
-      </View>
-      <View style={styles.visitBar}>
-        <View
-          style={[
-            styles.visitBarFill,
-            { width: `${Math.min(100, (item.visitCount / maxVisits) * 100)}%` },
-          ]}
-        />
       </View>
     </TouchableOpacity>
   );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Your places</Text>
+      <View style={styles.headerWrap}>
+        <Text style={styles.dateLabel}>{format(new Date(), 'EEEE, MMM d')}</Text>
+        <Text style={styles.header}>Places</Text>
+      </View>
       {places.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No places learned yet</Text>
@@ -143,62 +104,218 @@ export default function PlacesScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#534AB7"
+              tintColor={THEME.colors.brand.primary}
             />
           }
           contentContainerStyle={styles.list}
         />
       )}
+
+      <Modal
+        visible={placeSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPlaceSheetVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setPlaceSheetVisible(false)}
+          />
+          <View style={styles.modalSheet}>
+            <View style={styles.handle} />
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderText}>
+                <Text style={styles.modalTitle} numberOfLines={2}>
+                  {selectedPlace?.name}
+                </Text>
+                <Text style={styles.placeSubtitle}>{placeSubtitle}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setPlaceSheetVisible(false)}>
+                <Text style={styles.closeText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={placeMemories}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  style={styles.modalMemoryCard}
+                  onPress={() => {
+                    setSelectedMemory(item);
+                    setMemorySheetVisible(true);
+                  }}
+                >
+                  <Text style={styles.cardTime}>
+                    {format(new Date(item.timestamp), 'MMM d, yyyy · h:mm a')}
+                  </Text>
+                  <Text style={styles.modalMemoryPlace}>{item.placeName}</Text>
+                  {item.note ? <Text style={styles.cardNote}>{item.note}</Text> : null}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No detailed memories yet for this place.</Text>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <MemoryDetailSheet
+        visible={memorySheetVisible}
+        memory={selectedMemory}
+        onClose={() => setMemorySheetVisible(false)}
+        onMemoryChanged={refreshSelectedPlace}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0F', paddingTop: 60 },
+  container: {
+    flex: 1,
+    backgroundColor: THEME.colors.bg.base,
+    paddingTop: 64,
+  },
+  headerWrap: {
+    paddingHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.xl,
+  },
+  dateLabel: {
+    fontSize: THEME.font.sizes.sm,
+    color: THEME.colors.text.tertiary,
+    marginBottom: THEME.spacing.sm,
+  },
   header: {
-    fontSize: 28,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    paddingHorizontal: 20,
-    marginBottom: 20,
+    fontSize: THEME.font.sizes.xxxl,
+    fontWeight: THEME.font.weights.bold,
+    color: THEME.colors.text.primary,
   },
   placeSubtitle: {
-    fontSize: 14,
-    color: '#666680',
-    paddingHorizontal: 20,
-    marginTop: -14,
-    marginBottom: 16,
+    fontSize: THEME.font.sizes.md,
+    color: THEME.colors.text.secondary,
+    marginTop: THEME.spacing.xs,
   },
-  backBtn: { paddingHorizontal: 20, marginBottom: 12 },
-  backBtnText: { fontSize: 14, color: '#534AB7' },
-  list: { paddingHorizontal: 20, paddingBottom: 40 },
+  list: { paddingHorizontal: THEME.spacing.xl, paddingBottom: 160 },
   card: {
-    backgroundColor: '#16161E',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
+    backgroundColor: THEME.colors.bg.surface,
+    borderRadius: THEME.radius.md,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    marginBottom: 2,
     borderWidth: 0.5,
-    borderColor: '#2A2A3A',
+    borderColor: THEME.colors.border.subtle,
+    borderLeftWidth: 2.5,
+    borderLeftColor: THEME.colors.brand.primary,
   },
-  placeHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  placeRank: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#1E1A3E',
+  placeHeader: { flexDirection: 'row', alignItems: 'center' },
+  placeInfo: { flex: 1 },
+  placeName: {
+    fontSize: 15,
+    fontWeight: THEME.font.weights.medium,
+    color: THEME.colors.text.primary,
+    marginBottom: THEME.spacing.sm,
+  },
+  placeMeta: {
+    fontSize: 11,
+    color: THEME.colors.text.tertiary,
+    marginTop: THEME.spacing.sm,
+  },
+  visitBar: {
+    height: 3,
+    backgroundColor: THEME.colors.bg.base,
+    borderRadius: THEME.radius.full,
+    overflow: 'hidden',
+  },
+  visitBarFill: {
+    height: 3,
+    backgroundColor: THEME.colors.brand.primary,
+    borderRadius: THEME.radius.full,
+  },
+  cardTime: {
+    fontSize: THEME.font.sizes.sm,
+    color: THEME.colors.text.tertiary,
+    marginBottom: THEME.spacing.xs,
+  },
+  modalMemoryPlace: {
+    fontSize: THEME.font.sizes.md,
+    color: THEME.colors.text.primary,
+    fontWeight: THEME.font.weights.medium,
+  },
+  cardNote: {
+    fontSize: THEME.font.sizes.md,
+    color: THEME.colors.text.secondary,
+    marginTop: THEME.spacing.sm,
+    lineHeight: 20,
+  },
+  empty: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 40,
   },
-  placeRankText: { fontSize: 12, fontWeight: '600', color: '#AFA9EC' },
-  placeInfo: { flex: 1 },
-  placeName: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', marginBottom: 3 },
-  placeMeta: { fontSize: 12, color: '#666680' },
-  placeArrow: { fontSize: 20, color: '#2A2A3A' },
-  visitBar: { height: 3, backgroundColor: '#0A0A0F', borderRadius: 2, overflow: 'hidden' },
-  visitBarFill: { height: 3, backgroundColor: '#534AB7', borderRadius: 2 },
-  cardTime: { fontSize: 13, color: '#666680', marginBottom: 4 },
-  cardNote: { fontSize: 14, color: '#C8C8E0', fontStyle: 'italic', marginTop: 4 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 18, fontWeight: '600', color: '#FFFFFF', marginBottom: 8 },
-  emptyText: { fontSize: 14, color: '#666680', textAlign: 'center', lineHeight: 22 },
+  emptyTitle: {
+    fontSize: THEME.font.sizes.xl,
+    fontWeight: THEME.font.weights.semibold,
+    color: THEME.colors.text.primary,
+    marginBottom: THEME.spacing.sm,
+  },
+  emptyText: {
+    fontSize: THEME.font.sizes.md,
+    color: THEME.colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: THEME.colors.shadow.overlay,
+  },
+  modalSheet: {
+    backgroundColor: THEME.colors.bg.elevated,
+    borderTopLeftRadius: THEME.radius.xl,
+    borderTopRightRadius: THEME.radius.xl,
+    padding: THEME.spacing.xl,
+    paddingBottom: THEME.spacing.xxxl,
+    height: '70%',
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: THEME.radius.full,
+    backgroundColor: THEME.colors.border.medium,
+    alignSelf: 'center',
+    marginBottom: THEME.spacing.lg,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: THEME.spacing.lg,
+  },
+  modalHeaderText: {
+    flex: 1,
+    marginRight: THEME.spacing.md,
+  },
+  modalTitle: {
+    fontSize: THEME.font.sizes.xl,
+    fontWeight: THEME.font.weights.bold,
+    color: THEME.colors.text.primary,
+  },
+  closeText: {
+    fontSize: THEME.font.sizes.md,
+    color: THEME.colors.brand.primary,
+  },
+  modalMemoryCard: {
+    backgroundColor: THEME.colors.bg.surface,
+    borderRadius: THEME.radius.md,
+    borderWidth: 0.5,
+    borderColor: THEME.colors.border.subtle,
+    padding: THEME.spacing.lg,
+    marginBottom: THEME.spacing.sm,
+  },
 });

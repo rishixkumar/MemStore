@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { clearAllMemories, getDataSummary } from '../../storage/database';
+import { THEME } from '../theme';
 
 interface Props {
   visible: boolean;
@@ -91,7 +92,7 @@ export default function SettingsSheet({ visible, onClose, onDataCleared }: Props
 
           <Text style={styles.sectionTitle}>About</Text>
           <InfoRow label="Version" value="0.1.0" />
-          <InfoRow label="Built with" value="Expo + Gemini" />
+          <InfoRow label="Built with" value="Expo + Gemini + Ollama" />
         </View>
       </View>
     </Modal>
@@ -100,20 +101,20 @@ export default function SettingsSheet({ visible, onClose, onDataCleared }: Props
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: THEME.colors.shadow.overlay },
   sheet: {
-    backgroundColor: '#16161E',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
+    backgroundColor: THEME.colors.bg.elevated,
+    borderTopLeftRadius: THEME.radius.xl,
+    borderTopRightRadius: THEME.radius.xl,
+    padding: THEME.spacing.xl,
     paddingBottom: 42,
     gap: 12,
   },
   handle: {
     width: 36,
     height: 4,
-    borderRadius: 2,
-    backgroundColor: '#2A2A3A',
+    borderRadius: THEME.radius.full,
+    backgroundColor: THEME.colors.border.medium,
     alignSelf: 'center',
   },
   headerRow: {
@@ -122,11 +123,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
-  title: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
-  closeText: { fontSize: 14, color: '#534AB7' },
+  title: { fontSize: 22, fontWeight: THEME.font.weights.bold, color: THEME.colors.text.primary },
+  closeText: { fontSize: 14, color: THEME.colors.brand.primary },
   sectionTitle: {
     fontSize: 12,
-    color: '#666680',
+    color: THEME.colors.text.tertiary,
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginTop: 8,
@@ -143,15 +144,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
-  rowLabel: { fontSize: 15, color: '#FFFFFF' },
-  rowValue: { fontSize: 14, color: '#666680' },
+  rowLabel: { fontSize: 15, color: THEME.colors.text.primary },
+  rowValue: { fontSize: 14, color: THEME.colors.text.secondary },
   destructiveButton: {
     marginTop: 6,
-    backgroundColor: '#251417',
-    borderRadius: 12,
+    backgroundColor: THEME.colors.bg.overlay,
+    borderRadius: THEME.radius.md,
     padding: 14,
     alignItems: 'center',
   },
-  destructiveButtonText: { fontSize: 15, fontWeight: '600', color: '#F08F92' },
-  destructiveText: { color: '#F08F92' },
+  destructiveButtonText: {
+    fontSize: 15,
+    fontWeight: THEME.font.weights.semibold,
+    color: THEME.colors.semantic.danger,
+  },
+  destructiveText: { color: THEME.colors.semantic.danger },
 });

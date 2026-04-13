@@ -2,6 +2,7 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { insertMemory } from '../storage/database';
 import { Memory } from '../models/Memory';
+import { THEME } from '../ui/theme';
 
 export const LOCATION_TASK = 'AMBIENT_MEMORY_LOCATION_TASK';
 
@@ -98,7 +99,7 @@ export async function requestPermissionsAndStart() {
         foregroundService: {
           notificationTitle: 'Ambient Memory',
           notificationBody: 'Capturing your day quietly in the background.',
-          notificationColor: '#534AB7',
+          notificationColor: THEME.colors.brand.primary,
         },
       });
     }

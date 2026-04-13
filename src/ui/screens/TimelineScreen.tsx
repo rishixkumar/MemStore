@@ -1,33 +1,45 @@
-import { format } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Animated,
   FlatList,
   Modal,
   RefreshControl,
+  SectionList,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { Memory } from '../../models/Memory';
-import Svg, { Path } from 'react-native-svg';
-import { generateDailyDigest, generateOnThisDayCaption } from '../../intelligence/digestService';
 import {
-  clearAllMemories,
+  DailyDigestResult,
+  LlmProvider,
+  generateDailyDigest,
+  generateMemoryCaption,
+} from '../../intelligence/digestService';
+import {
   getAllMemories,
+  getDayStreak,
   getMemoriesForDate,
+  getMemoryCount,
   getOnThisDayMemories,
+  getPlaceCount,
+  searchMemories,
 } from '../../storage/database';
 import MemoryDetailSheet from '../components/MemoryDetailSheet';
 import SettingsSheet from '../components/SettingsSheet';
+import { GearIcon, NoteIcon, RefreshIcon, SearchIcon, VoiceIcon } from '../components/Icons';
+import { THEME } from '../theme';
 
 interface TimelineScreenProps {
   onOpenCapture: () => void;
 }
 
 type OnThisDayBucket = 365 | 30 | 7;
+
+type DigestState = DailyDigestResult | null;
 
 type OnThisDayState = {
   daysAgo: OnThisDayBucket;
@@ -36,59 +48,114 @@ type OnThisDayState = {
   caption: string;
 } | null;
 
+type StatCard = {
+  id: string;
+  label: string;
+  value: number;
+  suffix: string;
+  accentColor: string;
+};
+
+type MemorySection = {
+  title: string;
+  data: Memory[];
+};
+
 const ON_THIS_DAY_PRIORITIES: Array<{ daysAgo: OnThisDayBucket; label: string }> = [
-  { daysAgo: 365, label: '1 year ago' },
-  { daysAgo: 30, label: '30 days ago' },
-  { daysAgo: 7, label: '1 week ago' },
+  { daysAgo: 365, label: '1 YEAR AGO' },
+  { daysAgo: 30, label: '30 DAYS AGO' },
+  { daysAgo: 7, label: '1 WEEK AGO' },
 ];
 
 function getImportanceAccent(score: number) {
-  if (score >= 0.9) return '#534AB7';
-  if (score >= 0.7) return '#1D9E75';
-  return '#2A2A3A';
+  if (score >= 0.9) return THEME.colors.brand.primary;
+  if (score >= 0.7) return THEME.colors.accent.teal;
+  return THEME.colors.border.medium;
 }
 
-function AudioWave() {
+function getDayLabel(timestamp: number) {
+  const date = new Date(timestamp);
+  if (isToday(date)) return 'TODAY';
+  if (isYesterday(date)) return 'YESTERDAY';
+  return format(date, 'MMMM d').toUpperCase();
+}
+
+function groupMemoriesByDay(memories: Memory[]): MemorySection[] {
+  const groups = new Map<string, Memory[]>();
+
+  for (const memory of memories) {
+    const key = getDayLabel(memory.timestamp);
+    const existing = groups.get(key) ?? [];
+    existing.push(memory);
+    groups.set(key, existing);
+  }
+
+  return Array.from(groups.entries()).map(([title, data]) => ({ title, data }));
+}
+
+function ProviderBadge({ provider }: { provider: LlmProvider }) {
+  const palette =
+    provider === 'gemini'
+      ? {
+          backgroundColor: THEME.colors.provider.geminiBg,
+          color: THEME.colors.accent.teal,
+          label: 'Gemini',
+        }
+      : provider === 'ollama'
+        ? {
+            backgroundColor: THEME.colors.provider.ollamaBg,
+            color: THEME.colors.brand.primary,
+            label: 'Ollama',
+          }
+        : {
+            backgroundColor: THEME.colors.bg.overlay,
+            color: THEME.colors.text.tertiary,
+            label: 'Offline',
+          };
+
   return (
-    <View style={styles.audioWave}>
-      <View style={[styles.audioBar, styles.audioBarShort]} />
-      <View style={[styles.audioBar, styles.audioBarTall]} />
-      <View style={[styles.audioBar, styles.audioBarMid]} />
+    <View style={[styles.providerBadge, { backgroundColor: palette.backgroundColor }]}>
+      <Text style={[styles.providerBadgeText, { color: palette.color }]}>{palette.label}</Text>
     </View>
   );
 }
 
-function NoteGlyph() {
+function DigestSkeleton({ opacity }: { opacity: Animated.Value }) {
   return (
-    <View style={styles.noteGlyph}>
-      <View style={styles.noteGlyphLineShort} />
-      <View style={styles.noteGlyphLineLong} />
+    <Animated.View style={[styles.digestSkeletonWrap, { opacity }]}>
+      <View style={[styles.digestSkeletonLine, { width: '90%' }]} />
+      <View style={[styles.digestSkeletonLine, { width: '75%' }]} />
+      <View style={[styles.digestSkeletonLine, styles.digestSkeletonShort, { width: '45%' }]} />
+    </Animated.View>
+  );
+}
+
+function MemoryKindTag({ memory }: { memory: Memory }) {
+  if (memory.placeType !== 'manual') {
+    return null;
+  }
+
+  return (
+    <View style={styles.manualTag}>
+      <Text style={styles.manualTagText}>note</Text>
     </View>
   );
 }
 
-function SettingsGlyph() {
+function StatCardView({ stat }: { stat: StatCard }) {
   return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M12 9.25A2.75 2.75 0 1 0 12 14.75A2.75 2.75 0 1 0 12 9.25Z"
-        stroke="#8C8FA5"
-        strokeWidth={1.7}
-      />
-      <Path
-        d="M19 12a7.07 7.07 0 0 0-.08-1l2.02-1.57-1.92-3.32-2.42.87a7.6 7.6 0 0 0-1.74-1L14.5 3h-5l-.36 2.98c-.62.22-1.2.55-1.74 1l-2.42-.87-1.92 3.32L5.08 11c-.05.33-.08.66-.08 1s.03.67.08 1l-2.02 1.57 1.92 3.32 2.42-.87c.54.45 1.12.78 1.74 1L9.5 21h5l.36-2.98c.62-.22 1.2-.55 1.74-1l2.42.87 1.92-3.32L18.92 13c.05-.33.08-.66.08-1Z"
-        stroke="#8C8FA5"
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-      />
-    </Svg>
+    <View style={styles.statCard}>
+      <Text style={styles.statLabel}>{stat.label}</Text>
+      <Text style={[styles.statValue, { color: stat.accentColor }]}>{stat.value}</Text>
+      <Text style={styles.statSuffix}>{stat.suffix}</Text>
+    </View>
   );
 }
 
 export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [digest, setDigest] = useState<string | null>(null);
+  const [digest, setDigest] = useState<DigestState>(null);
   const [digestLoading, setDigestLoading] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
@@ -96,21 +163,37 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
   const [onThisDay, setOnThisDay] = useState<OnThisDayState>(null);
   const [onThisDayVisible, setOnThisDayVisible] = useState(false);
   const [onThisDayModalMemories, setOnThisDayModalMemories] = useState<Memory[]>([]);
-  const pulse = useRef(new Animated.Value(1)).current;
+  const [searchText, setSearchText] = useState('');
+  const [searchDraft, setSearchDraft] = useState('');
+  const [searchResults, setSearchResults] = useState<Memory[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [stats, setStats] = useState({ streak: 0, places: 0, memories: 0 });
+  const shimmer = useRef(new Animated.Value(0.15)).current;
 
   const today = format(new Date(), 'yyyy-MM-dd');
+  const isSearchActive = searchText.trim().length > 0;
 
   const loadMemories = useCallback(async () => {
     const all = await getAllMemories();
     setMemories(all);
   }, []);
 
+  const loadStats = useCallback(async () => {
+    const [streak, places, memoriesCount] = await Promise.all([
+      getDayStreak(),
+      getPlaceCount(),
+      getMemoryCount(),
+    ]);
+
+    setStats({ streak, places, memories: memoriesCount });
+  }, []);
+
   const loadDigest = useCallback(
     async (forceRefresh = false) => {
       setDigestLoading(true);
       try {
-        const summary = await generateDailyDigest(today, forceRefresh);
-        setDigest(summary);
+        const result = await generateDailyDigest(today, forceRefresh);
+        setDigest(result);
       } catch (e) {
         console.warn('Digest error:', e);
       } finally {
@@ -124,12 +207,15 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
     for (const candidate of ON_THIS_DAY_PRIORITIES) {
       const memoriesForDay = await getOnThisDayMemories(candidate.daysAgo);
       if (memoriesForDay.length > 0) {
-        const caption = await generateOnThisDayCaption(memoriesForDay[0]);
+        const caption = await generateMemoryCaption(
+          memoriesForDay[0].placeName,
+          memoriesForDay[0].timestamp
+        );
         setOnThisDay({
           daysAgo: candidate.daysAgo,
           label: candidate.label,
           memories: memoriesForDay,
-          caption,
+          caption: caption || 'You were here.',
         });
         return;
       }
@@ -138,28 +224,48 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
     setOnThisDay(null);
   }, []);
 
+  const loadSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    const results = await searchMemories(query);
+    setSearchResults(results);
+  }, []);
+
   useEffect(() => {
     loadMemories();
     loadDigest(false);
     loadOnThisDay();
-  }, [loadDigest, loadMemories, loadOnThisDay]);
+    loadStats();
+  }, [loadDigest, loadMemories, loadOnThisDay, loadStats]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setSearchText(searchDraft);
+      loadSearch(searchDraft);
+    }, 300);
+
+    return () => clearTimeout(handle);
+  }, [loadSearch, searchDraft]);
 
   useEffect(() => {
     if (!digestLoading) {
-      pulse.setValue(1);
+      shimmer.setValue(0.15);
       return;
     }
 
     const animation = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 0.4,
-          duration: 900,
+        Animated.timing(shimmer, {
+          toValue: 0.35,
+          duration: 600,
           useNativeDriver: true,
         }),
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 900,
+        Animated.timing(shimmer, {
+          toValue: 0.15,
+          duration: 600,
           useNativeDriver: true,
         }),
       ])
@@ -169,45 +275,48 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
 
     return () => {
       animation.stop();
-      pulse.setValue(1);
+      shimmer.setValue(0.15);
     };
-  }, [digestLoading, pulse]);
+  }, [digestLoading, shimmer]);
+
+  const statCards = useMemo<StatCard[]>(
+    () => [
+      {
+        id: 'streak',
+        label: 'DAY STREAK',
+        value: stats.streak,
+        suffix: 'days',
+        accentColor: THEME.colors.brand.primary,
+      },
+      {
+        id: 'places',
+        label: 'PLACES',
+        value: stats.places,
+        suffix: 'learned',
+        accentColor: THEME.colors.text.primary,
+      },
+      {
+        id: 'memories',
+        label: 'MEMORIES',
+        value: stats.memories,
+        suffix: 'captured',
+        accentColor: THEME.colors.text.primary,
+      },
+    ],
+    [stats]
+  );
+
+  const displayedMemories = isSearchActive ? searchResults : memories;
+  const sections = useMemo(() => groupMemoriesByDay(displayedMemories), [displayedMemories]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadMemories();
-    await loadDigest(true);
-    await loadOnThisDay();
+    await Promise.all([loadMemories(), loadDigest(true), loadOnThisDay(), loadStats()]);
+    if (searchText.trim()) {
+      await loadSearch(searchText);
+    }
     setRefreshing(false);
   };
-
-  const handleClearAll = () => {
-    Alert.alert('Clear all memories?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Clear',
-        style: 'destructive',
-        onPress: async () => {
-          await clearAllMemories();
-          setMemories([]);
-          setDigest(null);
-          setOnThisDay(null);
-          setSettingsVisible(false);
-        },
-      },
-    ]);
-  };
-
-  const emptyStateIcon = useMemo(
-    () => (
-      <View style={styles.emptyIconOuter}>
-        <View style={styles.emptyIconInner}>
-          <View style={styles.emptyIconDot} />
-        </View>
-      </View>
-    ),
-    []
-  );
 
   const openOnThisDay = async () => {
     if (!onThisDay) return;
@@ -222,87 +331,125 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
     setMemorySheetVisible(true);
   };
 
-  const renderHeader = () => (
-    <View>
-      <View style={styles.headerMetaRow}>
-        <Text style={styles.dateLabel}>{format(new Date(), 'EEEE, MMMM d')}</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => setSettingsVisible(true)} style={styles.iconButton}>
-            <SettingsGlyph />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleClearAll} style={styles.clearBtn}>
-            <Text style={styles.clearBtnText}>Clear</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-      <View style={styles.titleRow}>
-        <Text style={styles.header}>Your Memories</Text>
-      </View>
-
-      <Animated.View style={[styles.digestCard, digestLoading && { opacity: pulse }]}>
-        <Text style={styles.digestLabel}>Today&apos;s digest</Text>
-        <Text style={styles.digestText}>
-          {digestLoading
-            ? 'Reflecting on your day...'
-            : digest || 'No memories yet today. Walk around to start capturing.'}
-        </Text>
-        <View style={styles.digestFooter}>
-          <Text style={styles.digestSource}>Generated by Gemini</Text>
-        </View>
-        <TouchableOpacity onPress={() => loadDigest(true)} style={styles.refreshDigest}>
-          <Text style={styles.refreshDigestText}>Refresh digest</Text>
-        </TouchableOpacity>
-      </Animated.View>
-
-      {onThisDay && (
-        <TouchableOpacity style={styles.onThisDayCard} activeOpacity={0.85} onPress={openOnThisDay}>
-          <Text style={styles.onThisDayLabel}>{onThisDay.label}</Text>
-          <Text style={styles.onThisDayPlace}>{onThisDay.memories[0].placeName}</Text>
-          <Text style={styles.onThisDayTimestamp}>
-            {format(new Date(onThisDay.memories[0].timestamp), 'MMM d, yyyy · h:mm a')}
-          </Text>
-          <Text style={styles.onThisDayCaption}>{onThisDay.caption}</Text>
-        </TouchableOpacity>
-      )}
-
-      {memories.length > 0 && (
-        <Text style={styles.sectionLabel}>
-          {memories.length} memory{memories.length !== 1 ? ' entries' : ''}
-        </Text>
-      )}
-    </View>
-  );
-
-  const renderMemory = ({ item }: { item: Memory }) => (
+  const renderMemoryCard = ({ item }: { item: Memory }) => (
     <TouchableOpacity
-      activeOpacity={0.85}
+      activeOpacity={0.88}
       onPress={() => openMemory(item)}
       style={[styles.card, { borderLeftColor: getImportanceAccent(item.importanceScore) }]}
     >
-      <View style={styles.cardHeader}>
-        <View style={styles.placeNameRow}>
-          {item.memoryKind === 'note' && <NoteGlyph />}
-          {item.memoryKind === 'voice' && <AudioWave />}
+      <View style={styles.cardTopRow}>
+        <View style={styles.cardTitleWrap}>
+          {item.memoryKind === 'note' && <NoteIcon color={THEME.colors.text.secondary} size={16} />}
+          {item.memoryKind === 'voice' && (
+            <VoiceIcon color={THEME.colors.text.secondary} size={16} />
+          )}
           <Text style={styles.placeName} numberOfLines={2}>
             {item.placeName}
           </Text>
         </View>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{Math.round(item.importanceScore * 100)}%</Text>
-        </View>
+        <MemoryKindTag memory={item} />
       </View>
-      <Text style={styles.timestamp}>
-        {format(new Date(item.timestamp), 'MMM d, yyyy · h:mm a')}
-      </Text>
-      {item.note &&
-        (item.memoryKind === 'voice' ? (
-          <View style={styles.voiceNoteRow}>
-            <Text style={styles.voiceNote}>{item.note}</Text>
-          </View>
-        ) : (
-          <Text style={styles.note}>{item.note}</Text>
-        ))}
+      <Text style={styles.timestamp}>{format(new Date(item.timestamp), 'MMM d, yyyy · h:mm a')}</Text>
+      {item.note ? (
+        <View style={styles.noteBlock}>
+          <Text style={styles.noteText}>{item.note}</Text>
+        </View>
+      ) : null}
     </TouchableOpacity>
+  );
+
+  const renderSectionHeader = ({ section }: { section: MemorySection }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionHeaderText}>{section.title}</Text>
+    </View>
+  );
+
+  const renderListHeader = () => (
+    <View style={styles.headerContent}>
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={styles.dateLabel}>{format(new Date(), 'EEEE, MMM d')}</Text>
+          <Text style={styles.headerTitle}>Memories</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setSettingsVisible(true)}
+          style={styles.settingsButton}
+          activeOpacity={0.85}
+        >
+          <GearIcon />
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={statCards}
+        keyExtractor={(item) => item.id}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.statsRow}
+        renderItem={({ item }) => <StatCardView stat={item} />}
+      />
+
+      <View
+        style={[
+          styles.searchBar,
+          { borderColor: searchFocused ? THEME.colors.border.strong : THEME.colors.border.subtle },
+        ]}
+      >
+        <SearchIcon />
+        <TextInput
+          value={searchDraft}
+          onChangeText={setSearchDraft}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          placeholder="Search your memories..."
+          placeholderTextColor={THEME.colors.text.tertiary}
+          style={styles.searchInput}
+        />
+      </View>
+
+      {isSearchActive ? (
+        <View style={styles.searchMetaRow}>
+          <Text style={styles.searchMetaText}>{searchResults.length} memories found</Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.digestCard}>
+            <View style={styles.digestAccentLine} />
+            <Text style={styles.digestLabel}>TODAY</Text>
+            {digestLoading ? (
+              <DigestSkeleton opacity={shimmer} />
+            ) : (
+              <Text style={styles.digestText}>
+                {digest?.summary ||
+                  'No memories yet today. Walk around and your day will begin to take shape.'}
+              </Text>
+            )}
+            <View style={styles.digestFooter}>
+              <ProviderBadge provider={digest?.provider || 'fallback'} />
+              <TouchableOpacity
+                onPress={() => loadDigest(true)}
+                style={styles.refreshButton}
+                hitSlop={12}
+                activeOpacity={0.85}
+              >
+                <RefreshIcon />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {onThisDay ? (
+            <TouchableOpacity style={styles.onThisDayCard} activeOpacity={0.9} onPress={openOnThisDay}>
+              <Text style={styles.onThisDayLabel}>{onThisDay.label}</Text>
+              <Text style={styles.onThisDayPlace}>{onThisDay.memories[0].placeName}</Text>
+              <Text style={styles.onThisDayDate}>
+                {format(new Date(onThisDay.memories[0].timestamp), 'MMM d, yyyy')}
+              </Text>
+              <Text style={styles.onThisDayCaption}>{onThisDay.caption}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </>
+      )}
+    </View>
   );
 
   const displayedOnThisDayMemories =
@@ -310,33 +457,41 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
 
   return (
     <View style={styles.container}>
-      {memories.length === 0 && !digestLoading ? (
-        <View style={styles.emptyContainer}>
-          {renderHeader()}
-          <View style={styles.empty}>
-            {emptyStateIcon}
-            <Text style={styles.emptyTitle}>Start your memory</Text>
+      <SectionList
+        sections={sections}
+        keyExtractor={(item) => item.id}
+        renderItem={renderMemoryCard}
+        renderSectionHeader={renderSectionHeader}
+        ListHeaderComponent={renderListHeader}
+        stickySectionHeadersEnabled
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={THEME.colors.brand.primary}
+          />
+        }
+        contentContainerStyle={[
+          styles.listContent,
+          sections.length === 0 ? styles.listContentEmpty : undefined,
+        ]}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>{isSearchActive ? 'Nothing found' : 'Start your memory'}</Text>
             <Text style={styles.emptySubtitle}>
-              Walk somewhere new. The app will quietly remember where you&apos;ve been so you
-              never have to.
+              {isSearchActive
+                ? 'Try a place name, note fragment, or a nearby date.'
+                : "Walk somewhere new or capture a moment. Ambient Memory will quietly keep up."}
             </Text>
-            <TouchableOpacity style={styles.captureNowButton} onPress={onOpenCapture}>
-              <Text style={styles.captureNowButtonText}>Capture now</Text>
-            </TouchableOpacity>
+            {!isSearchActive ? (
+              <TouchableOpacity style={styles.captureNowButton} onPress={onOpenCapture}>
+                <Text style={styles.captureNowButtonText}>Capture now</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
-        </View>
-      ) : (
-        <FlatList
-          data={memories}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMemory}
-          ListHeaderComponent={renderHeader}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#534AB7" />
-          }
-          contentContainerStyle={styles.list}
-        />
-      )}
+        }
+      />
 
       <Modal
         visible={onThisDayVisible}
@@ -354,23 +509,24 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {onThisDay
-                  ? `Your day - ${format(new Date(onThisDay.memories[0].timestamp), 'MMMM d, yyyy')}`
-                  : 'Your day'}
+                  ? format(new Date(onThisDay.memories[0].timestamp), 'MMMM d, yyyy')
+                  : 'On This Day'}
               </Text>
               <TouchableOpacity onPress={() => setOnThisDayVisible(false)}>
                 <Text style={styles.closeText}>Close</Text>
               </TouchableOpacity>
             </View>
-            {displayedOnThisDayMemories.map((memory) => (
-              <View key={memory.id} style={styles.modalMemoryRow}>
-                <Text style={styles.modalTimestamp}>{format(new Date(memory.timestamp), 'h:mm a')}</Text>
-                {memory.note ? (
-                  <Text style={styles.modalNote}>{memory.note}</Text>
-                ) : (
-                  <Text style={styles.modalPlace}>{memory.placeName}</Text>
-                )}
-              </View>
-            ))}
+            <FlatList
+              data={displayedOnThisDayMemories}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <View style={styles.modalMemoryRow}>
+                  <Text style={styles.modalTimestamp}>{format(new Date(item.timestamp), 'h:mm a')}</Text>
+                  <Text style={styles.modalPlace}>{item.placeName}</Text>
+                  {item.note ? <Text style={styles.modalNote}>{item.note}</Text> : null}
+                </View>
+              )}
+            />
           </View>
         </View>
       </Modal>
@@ -378,10 +534,15 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
       <SettingsSheet
         visible={settingsVisible}
         onClose={() => setSettingsVisible(false)}
-        onDataCleared={() => {
+        onDataCleared={async () => {
           setMemories([]);
           setDigest(null);
           setOnThisDay(null);
+          setSearchResults([]);
+          setSearchDraft('');
+          setSearchText('');
+          setStats({ streak: 0, places: 0, memories: 0 });
+          await loadStats();
         }}
       />
 
@@ -390,9 +551,10 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
         memory={selectedMemory}
         onClose={() => setMemorySheetVisible(false)}
         onMemoryChanged={async () => {
-          await loadMemories();
-          await loadDigest(true);
-          await loadOnThisDay();
+          await Promise.all([loadMemories(), loadDigest(true), loadOnThisDay(), loadStats()]);
+          if (searchText.trim()) {
+            await loadSearch(searchText);
+          }
         }}
       />
     </View>
@@ -400,193 +562,358 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0F', paddingTop: 60 },
-  headerMetaRow: {
+  container: {
+    flex: 1,
+    backgroundColor: THEME.colors.bg.base,
+    paddingTop: 64,
+  },
+  listContent: {
+    paddingBottom: 180,
+  },
+  listContentEmpty: {
+    flexGrow: 1,
+  },
+  headerContent: {
+    paddingBottom: THEME.spacing.md,
+  },
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 6,
+    paddingHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.lg,
   },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dateLabel: { fontSize: 13, color: '#666680' },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  dateLabel: {
+    fontSize: THEME.font.sizes.sm,
+    color: THEME.colors.text.tertiary,
+    fontWeight: THEME.font.weights.regular,
+    marginBottom: THEME.spacing.sm,
+  },
+  headerTitle: {
+    fontSize: THEME.font.sizes.xxxl,
+    color: THEME.colors.text.primary,
+    fontWeight: THEME.font.weights.bold,
+  },
+  settingsButton: {
+    width: 36,
+    height: 36,
+    borderRadius: THEME.radius.full,
     alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  header: { fontSize: 28, fontWeight: '700', color: '#FFFFFF' },
-  iconButton: { padding: 6 },
-  clearBtn: { padding: 6 },
-  clearBtnText: { fontSize: 13, color: '#534AB7' },
-  list: { paddingHorizontal: 20, paddingBottom: 40 },
-  emptyContainer: { flex: 1, paddingHorizontal: 20 },
-  digestCard: {
-    backgroundColor: '#16161E',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 24,
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.bg.elevated,
     borderWidth: 0.5,
-    borderColor: '#2A2A3A',
+    borderColor: THEME.colors.border.subtle,
+  },
+  statsRow: {
+    paddingHorizontal: THEME.spacing.xl,
+    gap: THEME.spacing.md,
+    marginBottom: THEME.spacing.lg,
+  },
+  statCard: {
+    width: 100,
+    height: 120,
+    backgroundColor: THEME.colors.bg.elevated,
+    borderRadius: THEME.radius.md,
+    borderWidth: 0.5,
+    borderColor: THEME.colors.border.subtle,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.lg,
+    justifyContent: 'space-between',
+  },
+  statLabel: {
+    fontSize: 9,
+    letterSpacing: 1,
+    color: THEME.colors.text.tertiary,
+    fontWeight: THEME.font.weights.semibold,
+  },
+  statValue: {
+    fontSize: 28,
+    fontWeight: THEME.font.weights.bold,
+  },
+  statSuffix: {
+    fontSize: THEME.font.sizes.sm,
+    color: THEME.colors.text.tertiary,
+  },
+  searchBar: {
+    height: 40,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1,
+    backgroundColor: THEME.colors.bg.elevated,
+    marginHorizontal: THEME.spacing.xl,
+    paddingHorizontal: THEME.spacing.lg,
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: THEME.spacing.md,
+    marginBottom: THEME.spacing.lg,
+  },
+  searchInput: {
+    flex: 1,
+    color: THEME.colors.text.primary,
+    fontSize: THEME.font.sizes.md,
+  },
+  searchMetaRow: {
+    paddingHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.sm,
+  },
+  searchMetaText: {
+    color: THEME.colors.text.tertiary,
+    fontSize: THEME.font.sizes.sm,
+  },
+  digestCard: {
+    marginHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.lg,
+    backgroundColor: THEME.colors.bg.elevated,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 0.5,
+    borderColor: THEME.colors.border.subtle,
+    overflow: 'hidden',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  digestAccentLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 2,
+    backgroundColor: THEME.colors.brand.primary,
   },
   digestLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#534AB7',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 10,
+    color: THEME.colors.brand.primary,
+    fontSize: THEME.font.sizes.xs,
+    letterSpacing: 2,
+    fontWeight: THEME.font.weights.semibold,
+    marginBottom: THEME.spacing.md,
   },
-  digestText: { fontSize: 15, color: '#C8C8E0', lineHeight: 24, fontStyle: 'italic' },
-  digestFooter: { alignItems: 'flex-end', marginTop: 10 },
-  digestSource: { fontSize: 10, color: '#666680' },
-  refreshDigest: { marginTop: 12, alignSelf: 'flex-end' },
-  refreshDigestText: { fontSize: 12, color: '#534AB7' },
+  digestText: {
+    color: THEME.colors.text.primary,
+    fontSize: THEME.font.sizes.lg,
+    lineHeight: 26,
+    fontWeight: THEME.font.weights.regular,
+    minHeight: 104,
+  },
+  digestFooter: {
+    marginTop: THEME.spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  providerBadge: {
+    borderRadius: THEME.radius.full,
+    paddingHorizontal: THEME.spacing.sm,
+    paddingVertical: 3,
+  },
+  providerBadgeText: {
+    fontSize: 9,
+    fontWeight: THEME.font.weights.medium,
+  },
+  refreshButton: {
+    width: 24,
+    height: 24,
+    borderRadius: THEME.radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  digestSkeletonWrap: {
+    gap: THEME.spacing.md,
+    minHeight: 104,
+    justifyContent: 'center',
+  },
+  digestSkeletonLine: {
+    height: 14,
+    borderRadius: THEME.radius.full,
+    backgroundColor: THEME.colors.bg.overlay,
+  },
+  digestSkeletonShort: {
+    height: 10,
+  },
   onThisDayCard: {
-    backgroundColor: '#1A1600',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
+    marginHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.lg,
+    backgroundColor: THEME.colors.accent.amberSoft,
+    borderRadius: THEME.radius.lg,
     borderWidth: 0.5,
-    borderColor: '#2A2200',
+    borderColor: THEME.colors.border.subtle,
+    borderLeftWidth: 2.5,
+    borderLeftColor: THEME.colors.accent.amber,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.lg,
   },
   onThisDayLabel: {
-    fontSize: 11,
-    color: '#BA7517',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 8,
+    color: THEME.colors.accent.amber,
+    fontSize: THEME.font.sizes.xs,
+    fontWeight: THEME.font.weights.semibold,
+    letterSpacing: 2,
+    marginBottom: THEME.spacing.sm,
   },
-  onThisDayPlace: { fontSize: 17, fontWeight: '600', color: '#FFFFFF', marginBottom: 6 },
-  onThisDayTimestamp: { fontSize: 12, color: '#9C8B5A', marginBottom: 8 },
-  onThisDayCaption: { fontSize: 14, color: '#E9D7A3', lineHeight: 22, fontStyle: 'italic' },
-  sectionLabel: {
-    fontSize: 12,
-    color: '#666680',
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+  onThisDayPlace: {
+    color: THEME.colors.text.primary,
+    fontSize: 15,
+    fontWeight: THEME.font.weights.medium,
+    marginBottom: THEME.spacing.xs,
+  },
+  onThisDayDate: {
+    color: THEME.colors.text.secondary,
+    fontSize: THEME.font.sizes.sm,
+    marginBottom: THEME.spacing.sm,
+  },
+  onThisDayCaption: {
+    color: THEME.colors.text.primary,
+    fontSize: THEME.font.sizes.md,
+    lineHeight: 20,
+  },
+  sectionHeader: {
+    backgroundColor: THEME.colors.bg.base,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingVertical: THEME.spacing.sm,
+  },
+  sectionHeaderText: {
+    color: THEME.colors.text.tertiary,
+    fontSize: 11,
+    fontWeight: THEME.font.weights.semibold,
+    letterSpacing: 1.5,
   },
   card: {
-    backgroundColor: '#16161E',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
+    backgroundColor: THEME.colors.bg.surface,
+    borderRadius: THEME.radius.md,
     borderWidth: 0.5,
-    borderColor: '#2A2A3A',
-    borderLeftWidth: 3,
+    borderColor: THEME.colors.border.subtle,
+    borderLeftWidth: 2.5,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    marginHorizontal: THEME.spacing.xl,
+    marginBottom: 2,
   },
-  cardHeader: {
+  cardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 6,
+    gap: THEME.spacing.sm,
   },
-  placeNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 },
-  noteGlyph: {
-    width: 14,
-    height: 14,
-    marginRight: 8,
-    justifyContent: 'center',
-    gap: 3,
+  cardTitleWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: THEME.spacing.sm,
   },
-  noteGlyphLineShort: {
-    width: 9,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: '#D0D3E5',
+  placeName: {
+    flex: 1,
+    color: THEME.colors.text.primary,
+    fontSize: 15,
+    fontWeight: THEME.font.weights.medium,
   },
-  noteGlyphLineLong: {
-    width: 12,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: '#D0D3E5',
+  timestamp: {
+    marginTop: THEME.spacing.xs,
+    color: THEME.colors.text.tertiary,
+    fontSize: 11,
   },
-  placeName: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', flex: 1 },
-  badge: {
-    backgroundColor: '#1E1A3E',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
+  noteBlock: {
+    borderTopWidth: 0.5,
+    borderTopColor: THEME.colors.border.subtle,
+    paddingTop: 10,
+    marginTop: 10,
   },
-  badgeText: { fontSize: 11, color: '#AFA9EC', fontWeight: '500' },
-  timestamp: { fontSize: 12, color: '#666680' },
-  note: { fontSize: 13, color: '#A0A0C0', marginTop: 6, fontStyle: 'italic' },
-  voiceNoteRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  voiceNote: { fontSize: 13, color: '#8A8AA3', fontStyle: 'italic', flex: 1 },
-  audioWave: { flexDirection: 'row', alignItems: 'flex-end', marginRight: 8, gap: 2 },
-  audioBar: { width: 3, borderRadius: 2, backgroundColor: '#6F7090' },
-  audioBarShort: { height: 8 },
-  audioBarMid: { height: 12 },
-  audioBarTall: { height: 16 },
-  empty: {
+  noteText: {
+    color: THEME.colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  manualTag: {
+    backgroundColor: THEME.colors.brand.soft,
+    borderRadius: THEME.radius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  manualTagText: {
+    color: THEME.colors.brand.primary,
+    fontSize: 9,
+    fontWeight: THEME.font.weights.semibold,
+    letterSpacing: 0.5,
+  },
+  emptyState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingHorizontal: THEME.spacing.xxxl,
+    paddingTop: THEME.spacing.xxxl,
   },
-  emptyIconOuter: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    borderWidth: 1,
-    borderColor: '#2A2A3A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
+  emptyTitle: {
+    color: THEME.colors.text.primary,
+    fontSize: THEME.font.sizes.xl,
+    fontWeight: THEME.font.weights.semibold,
+    marginBottom: THEME.spacing.sm,
   },
-  emptyIconInner: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    borderColor: '#534AB7',
-    alignItems: 'center',
-    justifyContent: 'center',
+  emptySubtitle: {
+    color: THEME.colors.text.secondary,
+    fontSize: THEME.font.sizes.md,
+    lineHeight: 22,
+    textAlign: 'center',
   },
-  emptyIconDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#534AB7',
-  },
-  emptyTitle: { fontSize: 20, fontWeight: '600', color: '#FFFFFF', marginBottom: 8 },
-  emptySubtitle: { fontSize: 14, color: '#666680', textAlign: 'center', lineHeight: 22 },
   captureNowButton: {
-    marginTop: 18,
-    backgroundColor: '#534AB7',
-    borderRadius: 14,
+    marginTop: THEME.spacing.xl,
+    backgroundColor: THEME.colors.brand.primary,
+    borderRadius: THEME.radius.md,
     paddingHorizontal: 20,
     paddingVertical: 14,
   },
-  captureNowButtonText: { fontSize: 15, color: '#FFFFFF', fontWeight: '600' },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  captureNowButtonText: {
+    color: THEME.colors.text.primary,
+    fontSize: THEME.font.sizes.md,
+    fontWeight: THEME.font.weights.semibold,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: THEME.colors.shadow.overlay,
+  },
   modalSheet: {
-    backgroundColor: '#16161E',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-    minHeight: 260,
+    backgroundColor: THEME.colors.bg.elevated,
+    borderTopLeftRadius: THEME.radius.xl,
+    borderTopRightRadius: THEME.radius.xl,
+    padding: THEME.spacing.xl,
+    paddingBottom: THEME.spacing.xxxl,
+    minHeight: 280,
+    maxHeight: '70%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 18,
+    alignItems: 'center',
+    marginBottom: THEME.spacing.lg,
   },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: '#FFFFFF', flex: 1, marginRight: 12 },
-  closeText: { fontSize: 14, color: '#534AB7' },
+  modalTitle: {
+    flex: 1,
+    marginRight: THEME.spacing.md,
+    color: THEME.colors.text.primary,
+    fontSize: THEME.font.sizes.xl,
+    fontWeight: THEME.font.weights.bold,
+  },
+  closeText: {
+    color: THEME.colors.brand.primary,
+    fontSize: THEME.font.sizes.md,
+  },
   modalMemoryRow: {
-    paddingVertical: 10,
+    paddingVertical: THEME.spacing.md,
     borderBottomWidth: 0.5,
-    borderBottomColor: '#2A2A3A',
+    borderBottomColor: THEME.colors.border.subtle,
   },
-  modalTimestamp: { fontSize: 12, color: '#666680', marginBottom: 4 },
-  modalNote: { fontSize: 14, color: '#C8C8E0', fontStyle: 'italic' },
-  modalPlace: { fontSize: 14, color: '#FFFFFF' },
+  modalTimestamp: {
+    color: THEME.colors.text.tertiary,
+    fontSize: THEME.font.sizes.sm,
+    marginBottom: THEME.spacing.xs,
+  },
+  modalPlace: {
+    color: THEME.colors.text.primary,
+    fontSize: THEME.font.sizes.md,
+    fontWeight: THEME.font.weights.medium,
+  },
+  modalNote: {
+    color: THEME.colors.text.secondary,
+    fontSize: THEME.font.sizes.md,
+    marginTop: THEME.spacing.xs,
+    lineHeight: 20,
+  },
 });
