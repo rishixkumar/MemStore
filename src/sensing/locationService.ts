@@ -53,8 +53,10 @@ async function handleLocationUpdate(location: Location.LocationObject) {
       createdAt: Date.now(),
     };
 
-    await insertMemory(memory);
-    console.log('Memory captured:', placeName);
+    const inserted = await insertMemory(memory);
+    if (inserted) {
+      console.log('Memory captured:', placeName);
+    }
   } catch (err) {
     console.error('Error handling location update:', err);
   }
