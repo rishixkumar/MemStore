@@ -221,26 +221,32 @@ export async function generateDailyDigest(date: string, forceRefresh = false): P
   const noteCount = memories.filter((memory) => Boolean(memory.note)).length;
   const specialInstruction =
     memories.length === 1
-      ? 'There is only one memory today, so make it feel intimate and meaningful instead of sparse.'
-      : 'Weave the places and notes together into a coherent emotional snapshot of the day.';
+      ? 'There is only one memory today, so make it feel intimate, vivid, and complete.'
+      : 'Connect the places and notes into one cohesive mood from the day.';
 
-  const prompt = `You are a warm, reflective personal memory assistant.
+  const prompt = `You are a stylish, emotionally intelligent memory assistant.
 Date: ${displayDate}
 Entries: ${memories.length}
 Manual notes included: ${noteCount}
 
-Write a 2-3 sentence daily digest in first person and past tense. The tone should be warm, reflective, and human. Mention the places naturally, weave in any notes when relevant, and avoid bullet points or robotic listing. ${specialInstruction}
+Write a cool, concise daily memory in first person and past tense.
+Return exactly 3-4 short lines.
+Each line should feel cinematic, warm, and human.
+Keep it tight and memorable, not verbose.
+Mention the place naturally, weave in any notes when relevant, and avoid sounding robotic.
+Do not use bullet points, numbering, titles, or quotation marks.
+${specialInstruction}
 
 Location timeline:
 ${memoryText}
 
-Write only the summary, nothing else.`;
+Write only the 3-4 line memory, nothing else.`;
 
   const request = (async () => {
     try {
       const summary = await callPreferredModel(prompt, {
-        maxOutputTokens: 200,
-        temperature: 0.8,
+        maxOutputTokens: 120,
+        temperature: 0.9,
       });
       digestRetryAfter.delete(date);
       await saveDigest(date, summary);
