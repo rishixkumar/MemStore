@@ -11,6 +11,7 @@ export interface Memory {
   note: string | null;
   importanceScore: number;
   createdAt: number;
+  onThisDayCaption?: string | null;
 }
 
 export interface Place {

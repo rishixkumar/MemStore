@@ -144,7 +144,7 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
         activityType: 'stationary',
         durationMinutes: 0,
         peopleIds: [],
-        note: `Voice memo (${recordingDuration}s)${uri ? ' - tap to play' : ''}`,
+        note: `🎙 Voice memo (${recordingDuration}s)${uri ? ' - tap to play' : ''}`,
         importanceScore: 0.9,
         createdAt: timestamp,
       };

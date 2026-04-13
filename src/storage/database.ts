@@ -50,6 +50,12 @@ export async function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_memories_place ON memories(place_name);
   `);
 
+  const memoryColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(memories)');
+  const hasOnThisDayCaption = memoryColumns.some((column) => column.name === 'on_this_day_caption');
+  if (!hasOnThisDayCaption) {
+    await db.execAsync('ALTER TABLE memories ADD COLUMN on_this_day_caption TEXT;');
+  }
+
   return db;
 }
 
@@ -182,6 +188,7 @@ export async function getAllMemories(): Promise<Memory[]> {
     note: row.note,
     importanceScore: row.importance_score,
     createdAt: row.created_at,
+    onThisDayCaption: row.on_this_day_caption,
   }));
 }
 
@@ -207,6 +214,7 @@ export async function getMemoriesForDate(date: string): Promise<Memory[]> {
     note: row.note,
     importanceScore: row.importance_score,
     createdAt: row.created_at,
+    onThisDayCaption: row.on_this_day_caption,
   }));
 }
 
@@ -227,6 +235,11 @@ export async function getDigestForDate(date: string): Promise<string | null> {
 export async function clearAllMemories() {
   const db = await getDatabase();
   await db.execAsync('DELETE FROM memories; DELETE FROM places; DELETE FROM digests;');
+}
+
+export async function deleteDigestForDate(date: string) {
+  const db = await getDatabase();
+  await db.runAsync('DELETE FROM digests WHERE date = ?', [date]);
 }
 
 export async function getAllPlaces(): Promise<PlaceRow[]> {
@@ -264,7 +277,65 @@ export async function getMemoriesForPlace(placeName: string): Promise<Memory[]> 
     note: row.note,
     importanceScore: row.importance_score,
     createdAt: row.created_at,
+    onThisDayCaption: row.on_this_day_caption,
   }));
+}
+
+export async function getOnThisDayMemories(daysAgo: number): Promise<Memory[]> {
+  const db = await getDatabase();
+  const target = new Date();
+  target.setDate(target.getDate() - daysAgo);
+
+  const windowStart = new Date(target.getTime() - 12 * 60 * 60 * 1000);
+  const windowEnd = new Date(target.getTime() + 12 * 60 * 60 * 1000);
+
+  const rows = await db.getAllAsync<any>(
+    `SELECT *
+     FROM memories
+     WHERE timestamp >= ? AND timestamp <= ?
+     ORDER BY importance_score DESC, timestamp DESC
+     LIMIT 3`,
+    [windowStart.getTime(), windowEnd.getTime()]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    timestamp: row.timestamp,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    placeName: row.place_name,
+    placeType: row.place_type,
+    activityType: row.activity_type,
+    durationMinutes: row.duration_minutes,
+    peopleIds: JSON.parse(row.people_ids || '[]'),
+    note: row.note,
+    importanceScore: row.importance_score,
+    createdAt: row.created_at,
+    onThisDayCaption: row.on_this_day_caption,
+  }));
+}
+
+export async function saveOnThisDayCaption(memoryId: string, caption: string) {
+  const db = await getDatabase();
+  await db.runAsync('UPDATE memories SET on_this_day_caption = ? WHERE id = ?', [
+    caption,
+    memoryId,
+  ]);
+}
+
+export async function getDataSummary(): Promise<{ totalMemories: number; totalPlaces: number }> {
+  const db = await getDatabase();
+  const memoryRow = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM memories'
+  );
+  const placeRow = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM places'
+  );
+
+  return {
+    totalMemories: memoryRow?.count || 0,
+    totalPlaces: placeRow?.count || 0,
+  };
 }
 
 export type PlaceRow = {

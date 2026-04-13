@@ -3,8 +3,10 @@ import { StatusBar } from 'expo-status-bar';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import Svg, { Path } from 'react-native-svg';
 import { initializeDatabase } from './src/storage/database';
 import { requestPermissionsAndStart } from './src/sensing/locationService';
+import { testGeminiConnection } from './src/intelligence/digestService';
 import TimelineScreen from './src/ui/screens/TimelineScreen';
 import PlacesScreen from './src/ui/screens/PlacesScreen';
 import CaptureSheet from './src/ui/components/CaptureSheet';
@@ -12,18 +14,30 @@ import CaptureSheet from './src/ui/components/CaptureSheet';
 const Tab = createBottomTabNavigator();
 
 function TabBarIcon({ label, active }: { label: string; active: boolean }) {
-  const icons: Record<string, string> = { Timeline: 'O', Places: '[]' };
+  const color = active ? '#534AB7' : '#444460';
+
   return (
-    <View style={{ alignItems: 'center', gap: 3 }}>
-      <Text style={{ fontSize: 18, color: active ? '#534AB7' : '#444460' }}>
-        {icons[label]}
-      </Text>
+    <View style={styles.tabIconWrap}>
+      {label === 'Timeline' ? (
+        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+          <Path d="M5 7H19" stroke={color} strokeWidth={2} strokeLinecap="round" />
+          <Path d="M5 12H16" stroke={color} strokeWidth={2} strokeLinecap="round" />
+          <Path d="M5 17H13" stroke={color} strokeWidth={2} strokeLinecap="round" />
+        </Svg>
+      ) : (
+        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+          <Path
+            d="M12 21C15.5 17 18 14.3 18 10.8C18 7.05 15.31 4 12 4C8.69 4 6 7.05 6 10.8C6 14.3 8.5 17 12 21Z"
+            stroke={color}
+            strokeWidth={2}
+            strokeLinejoin="round"
+          />
+          <Path d="M12 13.2C13.3255 13.2 14.4 12.1255 14.4 10.8C14.4 9.47452 13.3255 8.4 12 8.4C10.6745 8.4 9.6 9.47452 9.6 10.8C9.6 12.1255 10.6745 13.2 12 13.2Z" fill={active ? color : 'none'} stroke={color} strokeWidth={1.5} />
+        </Svg>
+      )}
       <Text
-        style={{
-          fontSize: 10,
-          color: active ? '#534AB7' : '#444460',
-          fontWeight: active ? '600' : '400',
-        }}
+        numberOfLines={1}
+        style={[styles.tabLabel, { color, fontWeight: active ? '600' : '400' }]}
       >
         {label}
       </Text>
@@ -39,6 +53,8 @@ export default function App() {
     async function bootstrap() {
       try {
         await initializeDatabase();
+        const geminiOk = await testGeminiConnection();
+        console.log('Gemini startup test result:', geminiOk ? 'success' : 'failed');
         await requestPermissionsAndStart();
       } catch (err: any) {
         Alert.alert('Permission Required', err.message || 'Something went wrong during setup.', [
@@ -61,7 +77,7 @@ export default function App() {
         })}
       >
         <Tab.Screen name="Timeline">
-          {() => <TimelineScreen key={refreshKey} />}
+          {() => <TimelineScreen key={refreshKey} onOpenCapture={() => setCaptureVisible(true)} />}
         </Tab.Screen>
         <Tab.Screen name="Places" component={PlacesScreen} />
       </Tab.Navigator>
@@ -84,6 +100,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  tabIconWrap: { alignItems: 'center', gap: 4, width: 72 },
+  tabLabel: { fontSize: 10, flexShrink: 0 },
   tabBar: {
     backgroundColor: '#16161E',
     borderTopColor: '#2A2A3A',
