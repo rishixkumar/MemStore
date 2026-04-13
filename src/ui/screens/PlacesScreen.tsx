@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
-  Modal,
   RefreshControl,
   StyleSheet,
   Text,
@@ -11,8 +10,11 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { Memory } from '../../models/Memory';
 import { getAllPlaces, getMemoriesForPlace, PlaceRow } from '../../storage/database';
+import BottomSheetModal, { SheetHeader } from '../components/BottomSheet';
 import MemoryDetailSheet from '../components/MemoryDetailSheet';
+import ScreenHeader from '../components/ScreenHeader';
 import { THEME } from '../theme';
+import { formatMemoryDateTime } from '../../utils/date';
 
 export default function PlacesScreen() {
   const [places, setPlaces] = useState<PlaceRow[]>([]);
@@ -84,10 +86,7 @@ export default function PlacesScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerWrap}>
-        <Text style={styles.dateLabel}>{format(new Date(), 'EEEE, MMM d')}</Text>
-        <Text style={styles.header}>Places</Text>
-      </View>
+      <ScreenHeader dateLabel={format(new Date(), 'EEEE, MMM d')} title="Places" />
       {places.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No places learned yet</Text>
@@ -111,59 +110,42 @@ export default function PlacesScreen() {
         />
       )}
 
-      <Modal
+      <BottomSheetModal
         visible={placeSheetVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPlaceSheetVisible(false)}
+        onClose={() => setPlaceSheetVisible(false)}
+        handleWidth={40}
+        panelStyle={styles.modalSheet}
       >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setPlaceSheetVisible(false)}
-          />
-          <View style={styles.modalSheet}>
-            <View style={styles.handle} />
-            <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderText}>
-                <Text style={styles.modalTitle} numberOfLines={2}>
-                  {selectedPlace?.name}
-                </Text>
-                <Text style={styles.placeSubtitle}>{placeSubtitle}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setPlaceSheetVisible(false)}>
-                <Text style={styles.closeText}>Close</Text>
-              </TouchableOpacity>
-            </View>
+        <SheetHeader
+          title={selectedPlace?.name || 'Place'}
+          subtitle={placeSubtitle}
+          onClose={() => setPlaceSheetVisible(false)}
+          titleNumberOfLines={2}
+        />
 
-            <FlatList
-              data={placeMemories}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  activeOpacity={0.88}
-                  style={styles.modalMemoryCard}
-                  onPress={() => {
-                    setSelectedMemory(item);
-                    setMemorySheetVisible(true);
-                  }}
-                >
-                  <Text style={styles.cardTime}>
-                    {format(new Date(item.timestamp), 'MMM d, yyyy · h:mm a')}
-                  </Text>
-                  <Text style={styles.modalMemoryPlace}>{item.placeName}</Text>
-                  {item.note ? <Text style={styles.cardNote}>{item.note}</Text> : null}
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>No detailed memories yet for this place.</Text>
-              }
-            />
-          </View>
-        </View>
-      </Modal>
+        <FlatList
+          data={placeMemories}
+          keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              activeOpacity={0.88}
+              style={styles.modalMemoryCard}
+              onPress={() => {
+                setSelectedMemory(item);
+                setMemorySheetVisible(true);
+              }}
+            >
+              <Text style={styles.cardTime}>{formatMemoryDateTime(item.timestamp)}</Text>
+              <Text style={styles.modalMemoryPlace}>{item.placeName}</Text>
+              {item.note ? <Text style={styles.cardNote}>{item.note}</Text> : null}
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No detailed memories yet for this place.</Text>
+          }
+        />
+      </BottomSheetModal>
 
       <MemoryDetailSheet
         visible={memorySheetVisible}
@@ -180,20 +162,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: THEME.colors.bg.base,
     paddingTop: 64,
-  },
-  headerWrap: {
-    paddingHorizontal: THEME.spacing.xl,
-    marginBottom: THEME.spacing.xl,
-  },
-  dateLabel: {
-    fontSize: THEME.font.sizes.sm,
-    color: THEME.colors.text.tertiary,
-    marginBottom: THEME.spacing.sm,
-  },
-  header: {
-    fontSize: THEME.font.sizes.xxxl,
-    fontWeight: THEME.font.weights.bold,
-    color: THEME.colors.text.primary,
   },
   placeSubtitle: {
     fontSize: THEME.font.sizes.md,
@@ -270,45 +238,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: THEME.colors.shadow.overlay,
-  },
   modalSheet: {
-    backgroundColor: THEME.colors.bg.elevated,
-    borderTopLeftRadius: THEME.radius.xl,
-    borderTopRightRadius: THEME.radius.xl,
-    padding: THEME.spacing.xl,
-    paddingBottom: THEME.spacing.xxxl,
     height: '70%',
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: THEME.radius.full,
-    backgroundColor: THEME.colors.border.medium,
-    alignSelf: 'center',
-    marginBottom: THEME.spacing.lg,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: THEME.spacing.lg,
-  },
-  modalHeaderText: {
-    flex: 1,
-    marginRight: THEME.spacing.md,
-  },
-  modalTitle: {
-    fontSize: THEME.font.sizes.xl,
-    fontWeight: THEME.font.weights.bold,
-    color: THEME.colors.text.primary,
-  },
-  closeText: {
-    fontSize: THEME.font.sizes.md,
-    color: THEME.colors.brand.primary,
   },
   modalMemoryCard: {
     backgroundColor: THEME.colors.bg.surface,

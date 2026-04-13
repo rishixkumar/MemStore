@@ -3,9 +3,6 @@ import {
   ActivityIndicator,
   Animated,
   Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -17,8 +14,10 @@ import * as Location from 'expo-location';
 import Svg, { Circle } from 'react-native-svg';
 import { Memory } from '../../models/Memory';
 import { insertMemory } from '../../storage/database';
+import BottomSheetModal from './BottomSheet';
 import { NoteIcon, VoiceIcon } from './Icons';
 import { THEME } from '../theme';
+import { resolvePlaceFromCoordinates } from '../../sensing/placeLabel';
 
 interface Props {
   visible: boolean;
@@ -80,15 +79,11 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
   const getCurrentLocation = async () => {
     try {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const geocoded = await Location.reverseGeocodeAsync({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      });
-      const place = geocoded[0];
-      const placeName = place
-        ? [place.name, place.street, place.city].filter(Boolean).join(', ')
-        : `${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)}`;
-      return { location: loc, placeName };
+      const resolvedPlace = await resolvePlaceFromCoordinates(
+        loc.coords.latitude,
+        loc.coords.longitude
+      );
+      return { location: loc, placeName: resolvedPlace.placeName };
     } catch {
       return null;
     }
@@ -201,143 +196,124 @@ export default function CaptureSheet({ visible, onClose, onMemorySaved }: Props)
       .padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.overlay}
-      >
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleClose} />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
+    <BottomSheetModal
+      visible={visible}
+      onClose={handleClose}
+      avoidKeyboard
+      handleWidth={40}
+      panelStyle={styles.sheet}
+    >
+      {mode === 'choose' && (
+        <>
+          <Text style={styles.sheetTitle}>Capture a memory</Text>
+          <TouchableOpacity style={styles.optionBtn} onPress={() => setMode('text')}>
+            <View style={styles.optionIconWrap}>
+              <NoteIcon />
+            </View>
+            <View>
+              <Text style={styles.optionLabel}>Quick note</Text>
+              <Text style={styles.optionSub}>Type what&apos;s on your mind</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.optionBtn}
+            onPress={() => {
+              setMode('recording');
+              startRecording();
+            }}
+          >
+            <View style={styles.optionIconWrap}>
+              <VoiceIcon />
+            </View>
+            <View>
+              <Text style={styles.optionLabel}>Voice memo</Text>
+              <Text style={styles.optionSub}>Record up to 2 minutes</Text>
+            </View>
+          </TouchableOpacity>
+        </>
+      )}
 
-          {mode === 'choose' && (
-            <>
-              <Text style={styles.sheetTitle}>Capture a memory</Text>
-              <TouchableOpacity style={styles.optionBtn} onPress={() => setMode('text')}>
-                <View style={styles.optionIconWrap}>
-                  <NoteIcon />
-                </View>
-                <View>
-                  <Text style={styles.optionLabel}>Quick note</Text>
-                  <Text style={styles.optionSub}>Type what&apos;s on your mind</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.optionBtn}
-                onPress={() => {
-                  setMode('recording');
-                  startRecording();
-                }}
-              >
-                <View style={styles.optionIconWrap}>
-                  <VoiceIcon />
-                </View>
-                <View>
-                  <Text style={styles.optionLabel}>Voice memo</Text>
-                  <Text style={styles.optionSub}>Record up to 2 minutes</Text>
-                </View>
-              </TouchableOpacity>
-            </>
-          )}
+      {mode === 'text' && (
+        <>
+          <Text style={styles.sheetTitle}>Quick note</Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              {
+                borderColor: inputFocused
+                  ? THEME.colors.border.medium
+                  : THEME.colors.border.subtle,
+              },
+            ]}
+            placeholder="What's happening right now?"
+            placeholderTextColor={THEME.colors.text.tertiary}
+            value={noteText}
+            onChangeText={setNoteText}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
+            multiline
+            autoFocus
+            maxLength={500}
+          />
+          <TouchableOpacity
+            style={[styles.saveBtn, !noteText.trim() && styles.saveBtnDisabled]}
+            onPress={saveTextNote}
+            disabled={!noteText.trim()}
+          >
+            <Text style={styles.saveBtnText}>Save memory</Text>
+          </TouchableOpacity>
+        </>
+      )}
 
-          {mode === 'text' && (
-            <>
-              <Text style={styles.sheetTitle}>Quick note</Text>
-              <TextInput
+      {mode === 'recording' && (
+        <>
+          <Text style={styles.sheetTitle}>Recording...</Text>
+          <View style={styles.recordingCenter}>
+            <View style={styles.recordPulseWrap}>
+              <Animated.View
                 style={[
-                  styles.textInput,
+                  styles.recordPulseRing,
                   {
-                    borderColor: inputFocused
-                      ? THEME.colors.border.medium
-                      : THEME.colors.border.subtle,
+                    transform: [{ scale: pulse }],
+                    opacity: pulse.interpolate({
+                      inputRange: [1, 1.6],
+                      outputRange: [1, 0],
+                    }),
                   },
                 ]}
-                placeholder="What's happening right now?"
-                placeholderTextColor={THEME.colors.text.tertiary}
-                value={noteText}
-                onChangeText={setNoteText}
-                onFocus={() => setInputFocused(true)}
-                onBlur={() => setInputFocused(false)}
-                multiline
-                autoFocus
-                maxLength={500}
               />
-              <TouchableOpacity
-                style={[styles.saveBtn, !noteText.trim() && styles.saveBtnDisabled]}
-                onPress={saveTextNote}
-                disabled={!noteText.trim()}
-              >
-                <Text style={styles.saveBtnText}>Save memory</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {mode === 'recording' && (
-            <>
-              <Text style={styles.sheetTitle}>Recording...</Text>
-              <View style={styles.recordingCenter}>
-                <View style={styles.recordPulseWrap}>
-                  <Animated.View
-                    style={[
-                      styles.recordPulseRing,
-                      {
-                        transform: [{ scale: pulse }],
-                        opacity: pulse.interpolate({
-                          inputRange: [1, 1.6],
-                          outputRange: [1, 0],
-                        }),
-                      },
-                    ]}
-                  />
-                  <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
-                    <Circle cx={14} cy={14} r={13} stroke={THEME.colors.border.medium} />
-                    <Circle
-                      cx={14}
-                      cy={14}
-                      r={8}
-                      fill={isRecording ? THEME.colors.semantic.danger : THEME.colors.text.secondary}
-                    />
-                  </Svg>
-                </View>
-                <Text style={styles.recordTimer}>{formatDuration(recordingDuration)}</Text>
-                <Text style={styles.recordHint}>Tap to stop and save</Text>
-              </View>
-              <TouchableOpacity style={styles.saveBtn} onPress={stopRecording}>
-                <Text style={styles.saveBtnText}>Stop & save</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {mode === 'saving' && (
-            <View style={styles.recordingCenter}>
-              <ActivityIndicator color={THEME.colors.brand.primary} size="large" />
-              <Text style={styles.recordHint}>Saving memory...</Text>
+              <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
+                <Circle cx={14} cy={14} r={13} stroke={THEME.colors.border.medium} />
+                <Circle
+                  cx={14}
+                  cy={14}
+                  r={8}
+                  fill={isRecording ? THEME.colors.semantic.danger : THEME.colors.text.secondary}
+                />
+              </Svg>
             </View>
-          )}
+            <Text style={styles.recordTimer}>{formatDuration(recordingDuration)}</Text>
+            <Text style={styles.recordHint}>Tap to stop and save</Text>
+          </View>
+          <TouchableOpacity style={styles.saveBtn} onPress={stopRecording}>
+            <Text style={styles.saveBtnText}>Stop & save</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      {mode === 'saving' && (
+        <View style={styles.recordingCenter}>
+          <ActivityIndicator color={THEME.colors.brand.primary} size="large" />
+          <Text style={styles.recordHint}>Saving memory...</Text>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      )}
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: THEME.colors.shadow.overlay },
   sheet: {
-    backgroundColor: THEME.colors.bg.elevated,
-    borderTopLeftRadius: THEME.radius.xl,
-    borderTopRightRadius: THEME.radius.xl,
-    padding: THEME.spacing.xl,
-    paddingBottom: THEME.spacing.xxxl,
     minHeight: 280,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    backgroundColor: THEME.colors.border.medium,
-    borderRadius: THEME.radius.full,
-    alignSelf: 'center',
-    marginBottom: THEME.spacing.xl,
   },
   sheetTitle: {
     fontSize: THEME.font.sizes.xl,

@@ -1,5 +1,16 @@
 import * as SQLite from 'expo-sqlite';
 import { Memory, Place } from '../models/Memory';
+import {
+  MEMORY_DEDUP_RADIUS_METERS,
+  MEMORY_DEDUP_WINDOW_MS,
+  PLACE_MATCH_RADIUS_METERS,
+} from '../config/app';
+import {
+  getDayRangeForDateKey,
+  getDaysAgoRange,
+  toLocalDateKey,
+} from '../utils/date';
+import { haversineDistance } from '../utils/geo';
 
 const DB_NAME = 'ambientmemory.db';
 
@@ -85,31 +96,8 @@ export async function initializeDatabase() {
   return db;
 }
 
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function getLocalDateKey(timestamp: number): string {
-  const date = new Date(timestamp);
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getDayRange(date: string) {
-  const [year, month, day] = date.split('-').map(Number);
-  const start = new Date(year, month - 1, day, 0, 0, 0, 0);
-  const end = new Date(year, month - 1, day, 23, 59, 59, 999);
-  return { start, end };
+function inferMemoryKind(memory: Pick<Memory, 'memoryKind' | 'audioUri' | 'note'>) {
+  return memory.memoryKind || (memory.audioUri ? 'voice' : memory.note ? 'note' : 'passive');
 }
 
 function mapMemoryRow(row: any): Memory {
@@ -128,7 +116,11 @@ function mapMemoryRow(row: any): Memory {
     createdAt: row.created_at,
     onThisDayCaption: row.otd_caption ?? row.on_this_day_caption,
     audioUri: row.audio_uri,
-    memoryKind: row.memory_kind || (row.audio_uri ? 'voice' : row.note ? 'note' : 'passive'),
+    memoryKind: inferMemoryKind({
+      memoryKind: row.memory_kind,
+      audioUri: row.audio_uri,
+      note: row.note,
+    }),
   };
 }
 
@@ -139,7 +131,7 @@ export async function insertMemory(memory: Memory): Promise<boolean> {
 
   if (shouldDeduplicate) {
     // Deduplication: skip if we have a memory within 200m in the last 10 minutes
-    const tenMinutesAgo = memory.timestamp - 10 * 60 * 1000;
+    const tenMinutesAgo = memory.timestamp - MEMORY_DEDUP_WINDOW_MS;
     const recent = await db.getAllAsync<any>(
       'SELECT * FROM memories WHERE timestamp > ? ORDER BY timestamp DESC LIMIT 20',
       [tenMinutesAgo]
@@ -152,7 +144,7 @@ export async function insertMemory(memory: Memory): Promise<boolean> {
         row.latitude,
         row.longitude
       );
-      if (dist < 200) {
+      if (dist < MEMORY_DEDUP_RADIUS_METERS) {
         console.log('Duplicate memory skipped - still at same location');
         return false;
       }
@@ -178,12 +170,12 @@ export async function insertMemory(memory: Memory): Promise<boolean> {
       memory.createdAt,
       memory.onThisDayCaption || null,
       memory.audioUri || null,
-      memory.memoryKind || (memory.audioUri ? 'voice' : memory.note ? 'note' : 'passive'),
+      inferMemoryKind(memory),
     ]
   );
 
   await upsertPlace(memory);
-  await db.runAsync('DELETE FROM digests WHERE date = ?', [getLocalDateKey(memory.timestamp)]);
+  await db.runAsync('DELETE FROM digests WHERE date = ?', [toLocalDateKey(memory.timestamp)]);
   return true;
 }
 
@@ -198,7 +190,7 @@ async function upsertPlace(memory: Memory) {
       place.latitude,
       place.longitude
     );
-    if (dist < 150) {
+    if (dist < PLACE_MATCH_RADIUS_METERS) {
       await db.runAsync(
         'UPDATE places SET visit_count = visit_count + 1, last_visited = ? WHERE id = ?',
         [memory.timestamp, place.id]
@@ -229,7 +221,7 @@ export async function getAllMemories(): Promise<Memory[]> {
 
 export async function getMemoriesForDate(date: string): Promise<Memory[]> {
   const db = await getDatabase();
-  const { start, end } = getDayRange(date);
+  const { start, end } = getDayRangeForDateKey(date);
 
   const rows = await db.getAllAsync<any>(
     'SELECT * FROM memories WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC',
@@ -338,13 +330,7 @@ export async function getMemoriesForPlace(placeName: string): Promise<Memory[]> 
 
 export async function getOnThisDayMemories(daysAgo: number): Promise<Memory[]> {
   const db = await getDatabase();
-  const target = new Date();
-  target.setHours(0, 0, 0, 0);
-  target.setDate(target.getDate() - daysAgo);
-
-  const windowStart = new Date(target);
-  const windowEnd = new Date(target);
-  windowEnd.setHours(23, 59, 59, 999);
+  const { start: windowStart, end: windowEnd } = getDaysAgoRange(daysAgo);
 
   const rows = await db.getAllAsync<any>(
     `SELECT *

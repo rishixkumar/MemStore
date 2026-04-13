@@ -2,7 +2,12 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { insertMemory } from '../storage/database';
 import { Memory } from '../models/Memory';
-import { THEME } from '../ui/theme';
+import {
+  LOCATION_DEFERRED_INTERVAL_MS,
+  LOCATION_DISTANCE_INTERVAL_METERS,
+  LOCATION_NOTIFICATION_COLOR,
+} from '../config/app';
+import { resolvePlaceFromCoordinates } from './placeLabel';
 
 export const LOCATION_TASK = 'AMBIENT_MEMORY_LOCATION_TASK';
 
@@ -22,22 +27,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }: any) => {
 async function handleLocationUpdate(location: Location.LocationObject) {
   try {
     const { latitude, longitude } = location.coords;
-
-    let placeName = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-    let placeType = 'unknown';
-
-    try {
-      const geocoded = await Location.reverseGeocodeAsync({ latitude, longitude });
-      const place = geocoded[0];
-      if (place) {
-        placeName = [place.name, place.street, place.city]
-          .filter(Boolean)
-          .join(', ');
-        placeType = place.district || place.subregion || 'unknown';
-      }
-    } catch {
-      // Geocoding failed - use coordinates as fallback
-    }
+    const { placeName, placeType } = await resolvePlaceFromCoordinates(latitude, longitude);
 
     const memory: Memory = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -93,13 +83,13 @@ export async function requestPermissionsAndStart() {
     if (!isRegistered) {
       await Location.startLocationUpdatesAsync(LOCATION_TASK, {
         accuracy: Location.Accuracy.Balanced,
-        distanceInterval: 200,
-        deferredUpdatesInterval: 60000,
+        distanceInterval: LOCATION_DISTANCE_INTERVAL_METERS,
+        deferredUpdatesInterval: LOCATION_DEFERRED_INTERVAL_MS,
         showsBackgroundLocationIndicator: true,
         foregroundService: {
           notificationTitle: 'Ambient Memory',
           notificationBody: 'Capturing your day quietly in the background.',
-          notificationColor: THEME.colors.brand.primary,
+          notificationColor: LOCATION_NOTIFICATION_COLOR,
         },
       });
     }

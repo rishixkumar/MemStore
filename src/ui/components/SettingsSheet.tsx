@@ -2,14 +2,15 @@ import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Linking,
-  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { LOCATION_DISTANCE_INTERVAL_METERS, MEMORY_DEDUP_WINDOW_MS } from '../../config/app';
 import { clearAllMemories, getDataSummary } from '../../storage/database';
+import BottomSheetModal, { SheetHeader } from './BottomSheet';
 import { THEME } from '../theme';
 
 interface Props {
@@ -63,68 +64,39 @@ export default function SettingsSheet({ visible, onClose, onDataCleared }: Props
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>Settings</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={styles.closeText}>Close</Text>
-            </TouchableOpacity>
-          </View>
+    <BottomSheetModal visible={visible} onClose={onClose} panelStyle={styles.sheet}>
+      <SheetHeader title="Settings" onClose={onClose} />
 
-          <Text style={styles.sectionTitle}>Sensing</Text>
-          <TouchableOpacity style={styles.buttonRow} onPress={handleOpenSettings}>
-            <Text style={styles.rowLabel}>Background location</Text>
-            <Text style={styles.rowValue}>{permissionStatus}</Text>
-          </TouchableOpacity>
-          <InfoRow label="Capture distance threshold" value="200m" />
-          <InfoRow label="Min time between captures" value="10 min" />
+      <Text style={styles.sectionTitle}>Sensing</Text>
+      <TouchableOpacity style={styles.buttonRow} onPress={handleOpenSettings}>
+        <Text style={styles.rowLabel}>Background location</Text>
+        <Text style={styles.rowValue}>{permissionStatus}</Text>
+      </TouchableOpacity>
+      <InfoRow label="Capture distance threshold" value={`${LOCATION_DISTANCE_INTERVAL_METERS}m`} />
+      <InfoRow
+        label="Min time between captures"
+        value={`${Math.round(MEMORY_DEDUP_WINDOW_MS / 60000)} min`}
+      />
 
-          <Text style={styles.sectionTitle}>Data</Text>
-          <InfoRow label="Total memories" value={`${summary.totalMemories}`} />
-          <InfoRow label="Places learned" value={`${summary.totalPlaces}`} />
-          <TouchableOpacity style={styles.destructiveButton} onPress={handleClearAll}>
-            <Text style={styles.destructiveButtonText}>Clear all data</Text>
-          </TouchableOpacity>
+      <Text style={styles.sectionTitle}>Data</Text>
+      <InfoRow label="Total memories" value={`${summary.totalMemories}`} />
+      <InfoRow label="Places learned" value={`${summary.totalPlaces}`} />
+      <TouchableOpacity style={styles.destructiveButton} onPress={handleClearAll}>
+        <Text style={styles.destructiveButtonText}>Clear all data</Text>
+      </TouchableOpacity>
 
-          <Text style={styles.sectionTitle}>About</Text>
-          <InfoRow label="Version" value="0.1.0" />
-          <InfoRow label="Built with" value="Expo + Gemini + Ollama" />
-        </View>
-      </View>
-    </Modal>
+      <Text style={styles.sectionTitle}>About</Text>
+      <InfoRow label="Version" value="0.1.0" />
+      <InfoRow label="Built with" value="Expo + Gemini + Ollama" />
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: THEME.colors.shadow.overlay },
   sheet: {
-    backgroundColor: THEME.colors.bg.elevated,
-    borderTopLeftRadius: THEME.radius.xl,
-    borderTopRightRadius: THEME.radius.xl,
-    padding: THEME.spacing.xl,
     paddingBottom: 42,
     gap: 12,
   },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: THEME.radius.full,
-    backgroundColor: THEME.colors.border.medium,
-    alignSelf: 'center',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  title: { fontSize: 22, fontWeight: THEME.font.weights.bold, color: THEME.colors.text.primary },
-  closeText: { fontSize: 14, color: THEME.colors.brand.primary },
   sectionTitle: {
     fontSize: 12,
     color: THEME.colors.text.tertiary,

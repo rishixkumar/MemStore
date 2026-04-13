@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  Modal,
   StyleSheet,
   Text,
   TextInput,
@@ -9,11 +8,12 @@ import {
   View,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import { format } from 'date-fns';
 import { Memory } from '../../models/Memory';
 import { deleteMemory, updateMemory } from '../../storage/database';
+import BottomSheetModal, { SheetHeader } from './BottomSheet';
 import { NoteIcon, PauseIcon, PlayIcon, TrashIcon, VoiceIcon } from './Icons';
 import { THEME } from '../theme';
+import { formatMemoryDateTime } from '../../utils/date';
 
 interface Props {
   visible: boolean;
@@ -108,105 +108,65 @@ export default function MemoryDetailSheet({
   if (!memory) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
-          <View style={styles.headerRow}>
-            <View style={styles.kindRow}>
-              {memory.memoryKind === 'voice' ? <VoiceIcon /> : <NoteIcon />}
-              <Text style={styles.headerTitle}>
-                {memory.memoryKind === 'voice' ? 'Voice memo' : 'Quick note'}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={styles.closeText}>Close</Text>
-            </TouchableOpacity>
-          </View>
+    <BottomSheetModal visible={visible} onClose={onClose} panelStyle={styles.sheet}>
+      <SheetHeader
+        title={memory.memoryKind === 'voice' ? 'Voice memo' : 'Quick note'}
+        onClose={onClose}
+        left={<View style={styles.kindIcon}>{memory.memoryKind === 'voice' ? <VoiceIcon /> : <NoteIcon />}</View>}
+      />
 
-          <Text style={styles.placeName}>{memory.placeName}</Text>
-          <Text style={styles.timestamp}>
-            {format(new Date(memory.timestamp), 'MMM d, yyyy · h:mm a')}
-          </Text>
+      <Text style={styles.placeName}>{memory.placeName}</Text>
+      <Text style={styles.timestamp}>{formatMemoryDateTime(memory.timestamp)}</Text>
 
-          {editing ? (
-            <TextInput
-              style={styles.editor}
-              multiline
-              autoFocus
-              value={draftNote}
-              onChangeText={setDraftNote}
-              placeholder="Add context to this memory"
-              placeholderTextColor={THEME.colors.text.secondary}
-            />
-          ) : (
-            <View style={styles.noteCard}>
-              <Text style={styles.noteText}>{memory.note || 'No additional note saved.'}</Text>
-            </View>
-          )}
-
-          <View style={styles.actionsRow}>
-            {memory.memoryKind === 'voice' && memory.audioUri && (
-              <TouchableOpacity style={styles.primaryAction} onPress={handlePlayPause}>
-                {playing ? <PauseIcon /> : <PlayIcon />}
-                <Text style={styles.primaryActionText}>{playing ? 'Pause' : 'Play'}</Text>
-              </TouchableOpacity>
-            )}
-
-            {editing ? (
-              <TouchableOpacity style={styles.secondaryAction} onPress={handleSave}>
-                <Text style={styles.secondaryActionText}>Save changes</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={styles.secondaryAction} onPress={() => setEditing(true)}>
-                <NoteIcon />
-                <Text style={styles.secondaryActionText}>Edit</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={styles.destructiveAction} onPress={handleDelete}>
-              <TrashIcon />
-              <Text style={styles.destructiveActionText}>Delete</Text>
-            </TouchableOpacity>
-          </View>
+      {editing ? (
+        <TextInput
+          style={styles.editor}
+          multiline
+          autoFocus
+          value={draftNote}
+          onChangeText={setDraftNote}
+          placeholder="Add context to this memory"
+          placeholderTextColor={THEME.colors.text.secondary}
+        />
+      ) : (
+        <View style={styles.noteCard}>
+          <Text style={styles.noteText}>{memory.note || 'No additional note saved.'}</Text>
         </View>
+      )}
+
+      <View style={styles.actionsRow}>
+        {memory.memoryKind === 'voice' && memory.audioUri && (
+          <TouchableOpacity style={styles.primaryAction} onPress={handlePlayPause}>
+            {playing ? <PauseIcon /> : <PlayIcon />}
+            <Text style={styles.primaryActionText}>{playing ? 'Pause' : 'Play'}</Text>
+          </TouchableOpacity>
+        )}
+
+        {editing ? (
+          <TouchableOpacity style={styles.secondaryAction} onPress={handleSave}>
+            <Text style={styles.secondaryActionText}>Save changes</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.secondaryAction} onPress={() => setEditing(true)}>
+            <NoteIcon />
+            <Text style={styles.secondaryActionText}>Edit</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity style={styles.destructiveAction} onPress={handleDelete}>
+          <TrashIcon />
+          <Text style={styles.destructiveActionText}>Delete</Text>
+        </TouchableOpacity>
       </View>
-    </Modal>
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: THEME.colors.shadow.overlay },
   sheet: {
-    backgroundColor: THEME.colors.bg.elevated,
-    borderTopLeftRadius: THEME.radius.xl,
-    borderTopRightRadius: THEME.radius.xl,
-    padding: THEME.spacing.xl,
     paddingBottom: 38,
   },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: THEME.radius.full,
-    backgroundColor: THEME.colors.border.medium,
-    alignSelf: 'center',
-    marginBottom: THEME.spacing.xl,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: THEME.spacing.lg,
-  },
-  kindRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: {
-    fontSize: THEME.font.sizes.xl,
-    fontWeight: THEME.font.weights.semibold,
-    color: THEME.colors.text.primary,
-  },
-  closeText: { fontSize: 14, color: THEME.colors.brand.primary },
+  kindIcon: { alignItems: 'center', justifyContent: 'center' },
   placeName: {
     fontSize: 22,
     fontWeight: THEME.font.weights.bold,

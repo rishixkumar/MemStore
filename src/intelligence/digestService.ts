@@ -5,8 +5,12 @@ import {
   saveDigest,
   saveOnThisDayCaption,
 } from '../storage/database';
+import {
+  buildDailyDigestPrompt,
+  buildFallbackDigest,
+  buildMemoryCaptionPrompt,
+} from './digestPrompts';
 import { Memory } from '../models/Memory';
-import { format } from 'date-fns';
 
 const DEV_MODE = true;
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
@@ -42,21 +46,6 @@ type GeminiResponse = {
 type OllamaResponse = {
   response?: string;
 };
-
-function formatMemoriesForPrompt(memories: Memory[]): string {
-  if (memories.length === 0) return 'No location data recorded for this day.';
-  return memories
-    .map((m) => {
-      const time = format(new Date(m.timestamp), 'h:mm a');
-      const noteLine = m.note ? ` | note: ${m.note}` : '';
-      return `${time} - ${m.placeName}${noteLine}`;
-    })
-    .join('\n');
-}
-
-function buildFallbackDigest(memories: Memory[]): string {
-  return `You visited ${memories.length} place${memories.length !== 1 ? 's' : ''} today, including ${memories[0]?.placeName || 'somewhere'}.`;
-}
 
 function parseRetryDelayMs(errorText: string): number {
   const match = errorText.match(/"retryDelay":\s*"(\d+)s"/);
@@ -232,31 +221,7 @@ export async function generateDailyDigest(
     return { summary: buildFallbackDigest(memories), provider: 'fallback' };
   }
 
-  const memoryText = formatMemoriesForPrompt(memories);
-  const displayDate = format(new Date(date), 'MMMM d, yyyy');
-  const noteCount = memories.filter((memory) => Boolean(memory.note)).length;
-  const specialInstruction =
-    memories.length === 1
-      ? 'There is only one memory today, so make it feel intimate, vivid, and complete.'
-      : 'Connect the places and notes into one cohesive mood from the day.';
-
-  const prompt = `You are a stylish, emotionally intelligent memory assistant.
-Date: ${displayDate}
-Entries: ${memories.length}
-Manual notes included: ${noteCount}
-
-Write a cool, concise daily memory in first person and past tense.
-Return exactly 3-4 short lines.
-Each line should feel cinematic, warm, and human.
-Keep it tight and memorable, not verbose.
-Mention the place naturally, weave in any notes when relevant, and avoid sounding robotic.
-Do not use bullet points, numbering, titles, or quotation marks.
-${specialInstruction}
-
-Location timeline:
-${memoryText}
-
-Write only the 3-4 line memory, nothing else.`;
+  const prompt = buildDailyDigestPrompt(date, memories);
 
   const request: Promise<DailyDigestResult> = (async () => {
     try {
@@ -289,8 +254,7 @@ Write only the 3-4 line memory, nothing else.`;
 export async function generateMemoryCaption(placeName: string, timestamp: number): Promise<string> {
   if (!GEMINI_API_KEY && !OLLAMA_BASE_URL) return '';
 
-  const time = format(new Date(timestamp), 'h:mm a');
-  const prompt = `Write a single evocative, poetic sentence (max 12 words) about someone being at ${placeName} at ${time}. No quotes. Just the sentence.`;
+  const prompt = buildMemoryCaptionPrompt(placeName, timestamp);
 
   try {
     const result = await callPreferredModel(prompt, {
