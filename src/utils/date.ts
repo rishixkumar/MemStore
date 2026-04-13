@@ -58,3 +58,16 @@ export function formatMemoryDateTime(timestamp: number) {
 export function formatMemoryTime(timestamp: number) {
   return format(new Date(timestamp), 'h:mm a');
 }
+
+export function getTenMinuteSlotStart(timestamp = Date.now()) {
+  const slotStart = new Date(timestamp);
+  slotStart.setSeconds(0, 0);
+  slotStart.setMinutes(Math.floor(slotStart.getMinutes() / 10) * 10);
+  return slotStart.getTime();
+}
+
+export function getNextTenMinuteBoundary(timestamp = Date.now()) {
+  const nextBoundary = new Date(getTenMinuteSlotStart(timestamp));
+  nextBoundary.setMinutes(nextBoundary.getMinutes() + 10);
+  return nextBoundary.getTime();
+}

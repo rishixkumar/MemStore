@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import { Memory } from '../../models/Memory';
+import { getMemoryKind, Memory } from '../../models/Memory';
 import { deleteMemory, updateMemory } from '../../storage/database';
 import BottomSheetModal, { SheetHeader } from './BottomSheet';
 import { NoteIcon, PauseIcon, PlayIcon, TrashIcon, VoiceIcon } from './Icons';
@@ -108,12 +108,18 @@ export default function MemoryDetailSheet({
 
   if (!memory) return null;
 
+  const memoryKind = getMemoryKind(memory);
+
   return (
     <BottomSheetModal visible={visible} onClose={onClose} panelStyle={styles.sheet}>
       <SheetHeader
-        title={memory.memoryKind === 'voice' ? 'Voice memo' : 'Quick note'}
+        title={memoryKind === 'voice' ? 'Voice memo' : memoryKind === 'note' ? 'Quick note' : 'Memory'}
         onClose={onClose}
-        left={<View style={styles.kindIcon}>{memory.memoryKind === 'voice' ? <VoiceIcon /> : <NoteIcon />}</View>}
+        left={
+          <View style={styles.kindIcon}>
+            {memoryKind === 'voice' ? <VoiceIcon /> : memoryKind === 'note' ? <NoteIcon /> : null}
+          </View>
+        }
       />
 
       <Text style={[styles.placeName, { color: theme.colors.text.primary }]}>{memory.placeName}</Text>
@@ -155,7 +161,7 @@ export default function MemoryDetailSheet({
       )}
 
       <View style={styles.actionsRow}>
-        {memory.memoryKind === 'voice' && memory.audioUri && (
+        {memoryKind === 'voice' && memory.audioUri && (
           <TouchableOpacity
             style={[styles.primaryAction, { backgroundColor: theme.colors.brand.primary }]}
             onPress={handlePlayPause}

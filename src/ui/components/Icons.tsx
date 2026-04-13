@@ -164,3 +164,19 @@ export function TrashIcon({
     </Svg>
   );
 }
+
+export function ArchiveIcon({
+  color,
+  size = 18,
+}: IconProps) {
+  const { theme } = useTheme();
+  const strokeColor = color || theme.colors.text.primary;
+
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x={5} y={6} width={14} height={13} rx={2.5} stroke={strokeColor} strokeWidth={1.8} />
+      <Path d="M8 4.8h8" stroke={strokeColor} strokeWidth={1.8} strokeLinecap="round" />
+      <Path d="M9 10.5h6M9 14h6" stroke={strokeColor} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}

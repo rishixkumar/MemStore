@@ -17,6 +17,7 @@ import {
   generateDailyDigest,
   generateMemoryCaption,
 } from '../../intelligence/digestService';
+import { getMemoryKind } from '../../models/Memory';
 import {
   getAllMemories,
   getDayStreak,
@@ -40,9 +41,11 @@ import StatCard from '../components/timeline/StatCard';
 import { useTheme } from '../theme';
 import {
   formatMemoryTime,
+  getNextTenMinuteBoundary,
   groupItemsByDay,
   SectionedItems,
 } from '../../utils/date';
+import { logger } from '../../utils/logger';
 
 interface TimelineScreenProps {
   onOpenCapture: () => void;
@@ -134,10 +137,10 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
   const shimmer = useRef(new Animated.Value(0.15)).current;
 
   const getImportanceAccent = useCallback(
-    (score: number) => {
-      if (score >= 0.9) return theme.colors.brand.primary;
-      if (score >= 0.7) return theme.colors.accent.teal;
-      return theme.colors.border.medium;
+    (_score: number, memoryKind: ReturnType<typeof getMemoryKind>) => {
+      if (memoryKind === 'note') return theme.colors.accent.teal;
+      if (memoryKind === 'voice') return theme.colors.accent.amber;
+      return theme.colors.brand.primary;
     },
     [theme]
   );
@@ -167,7 +170,7 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
         const result = await generateDailyDigest(today, forceRefresh);
         setDigest(result);
       } catch (e) {
-        console.warn('Digest error:', e);
+        logger.error('Timeline', 'Digest loading failed.', e);
       } finally {
         setDigestLoading(false);
       }
@@ -251,6 +254,15 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
     };
   }, [digestLoading, shimmer]);
 
+  useEffect(() => {
+    const msUntilNextBoundary = Math.max(1000, getNextTenMinuteBoundary() - Date.now());
+    const timeout = setTimeout(() => {
+      loadDigest(false);
+    }, msUntilNextBoundary);
+
+    return () => clearTimeout(timeout);
+  }, [digest?.summary, loadDigest]);
+
   const statCards = useMemo<StatCard[]>(
     () => [
       {
@@ -321,7 +333,7 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
   const renderMemoryCard = ({ item }: { item: Memory }) => (
     <MemoryCard
       memory={item}
-      accentColor={getImportanceAccent(item.importanceScore)}
+      accentColor={getImportanceAccent(item.importanceScore, getMemoryKind(item))}
       onPress={() => openMemory(item)}
     />
   );

@@ -8,8 +8,11 @@ import { initializeDatabase } from './src/storage/database';
 import { requestPermissionsAndStart } from './src/sensing/locationService';
 import TimelineScreen from './src/ui/screens/TimelineScreen';
 import PlacesScreen from './src/ui/screens/PlacesScreen';
+import DigestHistoryScreen from './src/ui/screens/DigestHistoryScreen';
 import CaptureSheet from './src/ui/components/CaptureSheet';
 import { ThemeProvider, useTheme } from './src/ui/theme';
+import { logger } from './src/utils/logger';
+import { ArchiveIcon } from './src/ui/components/Icons';
 
 const Tab = createBottomTabNavigator();
 
@@ -26,6 +29,8 @@ function TabBarIcon({ label, active }: { label: string; active: boolean }) {
           <Path d="M5 14h14" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
           <Path d="M5 18.5h10" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
         </Svg>
+      ) : label === 'Archive' ? (
+        <ArchiveIcon color={color} size={24} />
       ) : (
         <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
           <Path
@@ -60,6 +65,7 @@ function AppShell() {
       try {
         await initializeDatabase();
         await requestPermissionsAndStart();
+        logger.info('App', 'Startup complete.');
       } catch (err: any) {
         Alert.alert('Permission Required', err.message || 'Something went wrong during setup.', [
           { text: 'OK' },
@@ -104,6 +110,7 @@ function AppShell() {
           {() => <TimelineScreen key={refreshKey} onOpenCapture={() => setCaptureVisible(true)} />}
         </Tab.Screen>
         <Tab.Screen name="Places" component={PlacesScreen} />
+        <Tab.Screen name="Archive" component={DigestHistoryScreen} />
       </Tab.Navigator>
 
       <TouchableOpacity

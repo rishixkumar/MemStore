@@ -16,6 +16,20 @@ export interface Memory {
   memoryKind?: 'passive' | 'note' | 'voice';
 }
 
+export type MemoryKind = 'passive' | 'note' | 'voice';
+
+export function getMemoryKind(memory: Pick<Memory, 'note' | 'audioUri' | 'memoryKind'>): MemoryKind {
+  if (memory.audioUri) {
+    return 'voice';
+  }
+
+  if (memory.note?.trim()) {
+    return 'note';
+  }
+
+  return 'passive';
+}
+
 export interface Place {
   id: string;
   name: string;

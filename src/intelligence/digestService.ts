@@ -1,5 +1,6 @@
 import {
   getDigestForDate,
+  saveDigestHistoryEntry,
   getMemoriesForDate,
   saveDigest,
   saveOnThisDayCaption,
@@ -10,12 +11,13 @@ import {
   buildMemoryCaptionPrompt,
 } from './digestPrompts';
 import { Memory } from '../models/Memory';
+import { logger } from '../utils/logger';
+import { getTenMinuteSlotStart } from '../utils/date';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 const OLLAMA_BASE_URL = (process.env.EXPO_PUBLIC_OLLAMA_BASE_URL || '').replace(/\/$/, '');
 const OLLAMA_MODEL = process.env.EXPO_PUBLIC_OLLAMA_MODEL || 'llama3.2';
-const DIGEST_CACHE_TTL_MS = 10 * 60 * 1000;
 const digestRequestsInFlight = new Map<string, Promise<DailyDigestResult>>();
 const digestRetryAfter = new Map<string, number>();
 const onThisDayRequestsInFlight = new Map<string, Promise<string>>();
@@ -53,7 +55,6 @@ function parseRetryDelayMs(errorText: string): number {
 }
 
 async function callGemini(prompt: string, generationConfig: GeminiGenerationConfig) {
-  console.log('Gemini prompt:', prompt);
   const response = await fetch(GEMINI_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -69,7 +70,6 @@ async function callGemini(prompt: string, generationConfig: GeminiGenerationConf
   }
 
   const data: GeminiResponse = await response.json();
-  console.log('Gemini raw response:', JSON.stringify(data, null, 2));
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
   if (!text) {
     throw new Error('Empty response from Gemini');
@@ -83,7 +83,6 @@ async function callOllama(prompt: string, generationConfig: GeminiGenerationConf
   }
 
   const ollamaUrl = `${OLLAMA_BASE_URL}/api/generate`;
-  console.log('Ollama prompt:', prompt);
   const response = await fetch(ollamaUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -104,7 +103,6 @@ async function callOllama(prompt: string, generationConfig: GeminiGenerationConf
   }
 
   const data: OllamaResponse = await response.json();
-  console.log('Ollama raw response:', JSON.stringify(data, null, 2));
   const text = data.response?.trim();
   if (!text) {
     throw new Error('Empty response from Ollama');
@@ -118,8 +116,8 @@ async function callPreferredModel(prompt: string, generationConfig: GeminiGenera
       const text = await callGemini(prompt, generationConfig);
       llmProviderInUse = 'gemini';
       return { text, provider: 'gemini' as const };
-    } catch (err) {
-      console.warn('Gemini unavailable, attempting Ollama fallback.', err);
+    } catch {
+      logger.warn('LLM', 'Gemini unavailable, trying Ollama fallback.');
     }
   }
 
@@ -129,7 +127,7 @@ async function callPreferredModel(prompt: string, generationConfig: GeminiGenera
       llmProviderInUse = 'ollama';
       return { text, provider: 'ollama' as const };
     } catch (err) {
-      console.warn('Ollama fallback unavailable.', err);
+      logger.warn('LLM', 'Ollama unavailable during fallback.', err);
       throw err;
     }
   }
@@ -138,59 +136,17 @@ async function callPreferredModel(prompt: string, generationConfig: GeminiGenera
   throw new Error('No available LLM provider');
 }
 
-export function getActiveLlmProvider() {
-  return llmProviderInUse;
-}
-
-export async function testGeminiConnection(): Promise<boolean> {
-  console.log('Testing Gemini connection. Key present:', Boolean(GEMINI_API_KEY));
-  if (!GEMINI_API_KEY) {
-    console.warn('Gemini connection test failed: missing EXPO_PUBLIC_GEMINI_API_KEY');
-    return false;
-  }
-
-  try {
-    const text = await callGemini('Say hello in one sentence.', {
-      maxOutputTokens: 40,
-      temperature: 0.2,
-    });
-    console.log('Gemini connection test succeeded:', text);
-    return true;
-  } catch (err) {
-    console.warn('Gemini connection test failed:', err);
-    return false;
-  }
-}
-
-export async function testOllamaConnection(): Promise<boolean> {
-  console.log('Testing Ollama connection. Base URL present:', Boolean(OLLAMA_BASE_URL));
-  if (!OLLAMA_BASE_URL) {
-    console.warn('Ollama connection test skipped: missing EXPO_PUBLIC_OLLAMA_BASE_URL');
-    return false;
-  }
-
-  try {
-    const text = await callOllama('Say hello in one sentence.', {
-      maxOutputTokens: 40,
-      temperature: 0.2,
-    });
-    console.log('Ollama connection test succeeded:', text);
-    return true;
-  } catch (err) {
-    console.warn('Ollama connection test failed:', err);
-    return false;
-  }
-}
-
 export async function generateDailyDigest(
   date: string,
   forceRefresh = false
 ): Promise<DailyDigestResult> {
   const cached = await getDigestForDate(date);
-  const hasFreshCache = cached ? Date.now() - cached.createdAt < DIGEST_CACHE_TTL_MS : false;
+  const currentSlotStart = getTenMinuteSlotStart();
+  const hasFreshCache = cached ? cached.createdAt >= currentSlotStart : false;
 
   if (cached && !forceRefresh && hasFreshCache) {
     llmProviderInUse = (cached.provider as LlmProvider) || 'fallback';
+    logger.info('Digest', `Using cached daily digest (${llmProviderInUse}).`);
     return { summary: cached.summary, provider: llmProviderInUse };
   }
 
@@ -208,8 +164,10 @@ export async function generateDailyDigest(
   if (!forceRefresh && retryAt > Date.now()) {
     if (cached) {
       llmProviderInUse = (cached.provider as LlmProvider) || 'fallback';
+      logger.info('Digest', `Using cached digest during retry window (${llmProviderInUse}).`);
       return { summary: cached.summary, provider: llmProviderInUse };
     }
+    logger.warn('Digest', 'Provider retry window active; using fallback digest.');
     return { summary: buildFallbackDigest(memories), provider: 'fallback' };
   }
 
@@ -226,26 +184,36 @@ export async function generateDailyDigest(
 
   const request: Promise<DailyDigestResult> = (async () => {
     try {
+      logger.info('Digest', forceRefresh ? 'Refreshing daily digest.' : 'Generating daily digest.');
       const result = await callPreferredModel(prompt, {
         maxOutputTokens: 120,
         temperature: 0.9,
       });
       digestRetryAfter.delete(date);
       await saveDigest(date, result.text, result.provider);
+      await saveDigestHistoryEntry({
+        date,
+        summary: result.text,
+        provider: result.provider,
+        placeName: memories[memories.length - 1]?.placeName || 'Unknown location',
+      });
+      logger.info('Digest', `Daily digest ready (${result.provider}).`);
       return { summary: result.text, provider: result.provider };
     } catch (err) {
       const errorText = String(err);
       if (errorText.includes('Gemini API error 429')) {
         digestRetryAfter.set(date, Date.now() + parseRetryDelayMs(errorText));
-        console.warn('Gemini digest temporarily rate limited; using fallback summary.');
+        logger.warn('Digest', 'Gemini rate limited; delaying retries.');
       } else {
-        console.warn('Gemini digest unavailable; using fallback summary.', err);
+        logger.warn('Digest', 'LLM digest unavailable; falling back.', err);
       }
       if (cached) {
         llmProviderInUse = (cached.provider as LlmProvider) || 'fallback';
+        logger.info('Digest', `Reusing previous cached digest (${llmProviderInUse}).`);
         return { summary: cached.summary, provider: llmProviderInUse };
       }
       llmProviderInUse = 'fallback';
+      logger.warn('Digest', 'No cached digest available; using local fallback summary.');
       return { summary: buildFallbackDigest(memories), provider: 'fallback' };
     } finally {
       digestRequestsInFlight.delete(date);
@@ -297,7 +265,7 @@ export async function generateOnThisDayCaption(memory: Memory): Promise<string> 
       await saveOnThisDayCaption(memory.id, caption);
       return caption;
     } catch (err) {
-      console.warn('On This Day caption unavailable; using fallback.', err);
+      logger.warn('OnThisDay', 'Caption generation unavailable; using fallback.', err);
       return fallback;
     } finally {
       onThisDayRequestsInFlight.delete(memory.id);

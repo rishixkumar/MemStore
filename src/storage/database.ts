@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { Memory, Place } from '../models/Memory';
+import { getMemoryKind, Memory, Place } from '../models/Memory';
 import {
   MEMORY_DEDUP_RADIUS_METERS,
   MEMORY_DEDUP_WINDOW_MS,
@@ -13,6 +13,15 @@ import {
 import { haversineDistance } from '../utils/geo';
 
 const DB_NAME = 'ambientmemory.db';
+
+export type DigestHistoryEntry = {
+  id: string;
+  date: string;
+  summary: string;
+  provider: string;
+  placeName: string;
+  createdAt: number;
+};
 
 export async function getDatabase() {
   const db = await SQLite.openDatabaseAsync(DB_NAME);
@@ -58,8 +67,18 @@ export async function initializeDatabase() {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS digest_history (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      provider TEXT DEFAULT 'fallback',
+      place_name TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_memories_place ON memories(place_name);
+    CREATE INDEX IF NOT EXISTS idx_digest_history_created_at ON digest_history(created_at DESC);
   `);
 
   const memoryColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(memories)');
@@ -96,10 +115,6 @@ export async function initializeDatabase() {
   return db;
 }
 
-function inferMemoryKind(memory: Pick<Memory, 'memoryKind' | 'audioUri' | 'note'>) {
-  return memory.memoryKind || (memory.audioUri ? 'voice' : memory.note ? 'note' : 'passive');
-}
-
 function mapMemoryRow(row: any): Memory {
   return {
     id: row.id,
@@ -116,7 +131,7 @@ function mapMemoryRow(row: any): Memory {
     createdAt: row.created_at,
     onThisDayCaption: row.otd_caption ?? row.on_this_day_caption,
     audioUri: row.audio_uri,
-    memoryKind: inferMemoryKind({
+    memoryKind: getMemoryKind({
       memoryKind: row.memory_kind,
       audioUri: row.audio_uri,
       note: row.note,
@@ -145,7 +160,6 @@ export async function insertMemory(memory: Memory): Promise<boolean> {
         row.longitude
       );
       if (dist < MEMORY_DEDUP_RADIUS_METERS) {
-        console.log('Duplicate memory skipped - still at same location');
         return false;
       }
     }
@@ -170,7 +184,7 @@ export async function insertMemory(memory: Memory): Promise<boolean> {
       memory.createdAt,
       memory.onThisDayCaption || null,
       memory.audioUri || null,
-      inferMemoryKind(memory),
+      getMemoryKind(memory),
     ]
   );
 
@@ -238,6 +252,36 @@ export async function saveDigest(date: string, summary: string, provider = 'fall
   );
 }
 
+export async function saveDigestHistoryEntry(
+  entry: Omit<DigestHistoryEntry, 'id' | 'createdAt'> & { id?: string; createdAt?: number }
+) {
+  const db = await getDatabase();
+  const createdAt = entry.createdAt ?? Date.now();
+  const id = entry.id ?? `digest-history-${createdAt}-${Math.random().toString(36).slice(2, 9)}`;
+
+  await db.runAsync(
+    `INSERT INTO digest_history (id, date, summary, provider, place_name, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, entry.date, entry.summary, entry.provider, entry.placeName, createdAt]
+  );
+}
+
+export async function getDigestHistoryEntries(): Promise<DigestHistoryEntry[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<any>(
+    'SELECT id, date, summary, provider, place_name, created_at FROM digest_history ORDER BY created_at DESC'
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    date: row.date,
+    summary: row.summary,
+    provider: row.provider || 'fallback',
+    placeName: row.place_name,
+    createdAt: row.created_at,
+  }));
+}
+
 export async function getDigestForDate(
   date: string
 ): Promise<{ summary: string; provider: string; createdAt: number } | null> {
@@ -256,7 +300,7 @@ export async function getDigestForDate(
 
 export async function clearAllMemories() {
   const db = await getDatabase();
-  await db.execAsync('DELETE FROM memories; DELETE FROM places; DELETE FROM digests;');
+  await db.execAsync('DELETE FROM memories; DELETE FROM places; DELETE FROM digests; DELETE FROM digest_history;');
 }
 
 export async function deleteDigestForDate(date: string) {
@@ -271,10 +315,15 @@ export async function updateMemory(
   const db = await getDatabase();
   const fields: string[] = [];
   const values: Array<string | null> = [];
+  let nextNote: string | null | undefined;
+  let nextAudioUri: string | null | undefined;
+  let shouldRecomputeKind = false;
 
   if (updates.note !== undefined) {
     fields.push('note = ?');
     values.push(updates.note);
+    nextNote = updates.note;
+    shouldRecomputeKind = true;
   }
   if (updates.placeName !== undefined) {
     fields.push('place_name = ?');
@@ -283,10 +332,26 @@ export async function updateMemory(
   if (updates.audioUri !== undefined) {
     fields.push('audio_uri = ?');
     values.push(updates.audioUri);
+    nextAudioUri = updates.audioUri;
+    shouldRecomputeKind = true;
   }
   if (updates.memoryKind !== undefined) {
     fields.push('memory_kind = ?');
     values.push(updates.memoryKind);
+    shouldRecomputeKind = false;
+  }
+
+  if (shouldRecomputeKind) {
+    const current = await getMemoryById(memoryId);
+    if (current) {
+      const resolvedKind = getMemoryKind({
+        note: nextNote !== undefined ? nextNote : current.note,
+        audioUri: nextAudioUri !== undefined ? nextAudioUri : current.audioUri,
+        memoryKind: current.memoryKind,
+      });
+      fields.push('memory_kind = ?');
+      values.push(resolvedKind);
+    }
   }
 
   if (fields.length === 0) {

@@ -1,14 +1,15 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Memory } from '../../../models/Memory';
+import { getMemoryKind, Memory } from '../../../models/Memory';
 import { NoteIcon, VoiceIcon } from '../Icons';
 import { useTheme } from '../../theme';
 import { formatMemoryDateTime } from '../../../utils/date';
 
 function ManualTag({ memory }: { memory: Memory }) {
   const { theme } = useTheme();
+  const memoryKind = getMemoryKind(memory);
 
-  if (memory.placeType !== 'manual') {
+  if (memoryKind !== 'note') {
     return null;
   }
 
@@ -29,6 +30,7 @@ export default function MemoryCard({
   onPress: () => void;
 }) {
   const { theme } = useTheme();
+  const memoryKind = getMemoryKind(memory);
 
   return (
     <TouchableOpacity
@@ -45,10 +47,10 @@ export default function MemoryCard({
     >
       <View style={styles.cardTopRow}>
         <View style={styles.cardTitleWrap}>
-          {memory.memoryKind === 'note' ? (
+          {memoryKind === 'note' ? (
             <NoteIcon color={theme.colors.text.secondary} size={16} />
           ) : null}
-          {memory.memoryKind === 'voice' ? (
+          {memoryKind === 'voice' ? (
             <VoiceIcon color={theme.colors.text.secondary} size={16} />
           ) : null}
           <Text style={[styles.placeName, { color: theme.colors.text.primary }]} numberOfLines={2}>

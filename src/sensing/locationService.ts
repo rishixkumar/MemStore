@@ -8,12 +8,13 @@ import {
   LOCATION_NOTIFICATION_COLOR,
 } from '../config/app';
 import { resolvePlaceFromCoordinates } from './placeLabel';
+import { logger } from '../utils/logger';
 
 export const LOCATION_TASK = 'AMBIENT_MEMORY_LOCATION_TASK';
 
 TaskManager.defineTask(LOCATION_TASK, async ({ data, error }: any) => {
   if (error) {
-    console.error('Location task error:', error);
+    logger.error('Location', 'Background location task failed.', error);
     return;
   }
   if (data) {
@@ -44,12 +45,9 @@ async function handleLocationUpdate(location: Location.LocationObject) {
       createdAt: Date.now(),
     };
 
-    const inserted = await insertMemory(memory);
-    if (inserted) {
-      console.log('Memory captured:', placeName);
-    }
+    await insertMemory(memory);
   } catch (err) {
-    console.error('Error handling location update:', err);
+    logger.error('Location', 'Failed to process location update.', err);
   }
 }
 
@@ -92,10 +90,10 @@ export async function requestPermissionsAndStart() {
           notificationColor: LOCATION_NOTIFICATION_COLOR,
         },
       });
+      logger.info('Location', 'Background location tracking started.');
     }
   } else {
-    // Expo Go fallback - capture current location once as a test memory
-    console.log('Background location unavailable (Expo Go). Capturing single location for preview.');
+    logger.info('Location', 'Expo Go fallback active. Capturing one preview location.');
     const location = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.Balanced,
     });
