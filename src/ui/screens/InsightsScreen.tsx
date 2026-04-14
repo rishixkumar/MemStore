@@ -5,6 +5,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Animated,
   LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,6 +34,8 @@ const CHART_DURATION_MS = 400;
 const STAGGER_MS = 45;
 const MIN_MEMORIES_FOR_INSIGHTS = 5;
 const HISTOGRAM_LABEL_HOURS = [6, 12, 18, 0];
+const HIGHLIGHT_CARD_WIDTH = 220;
+const HIGHLIGHT_CARD_GAP = 12;
 
 type RootTabParamList = {
   Timeline: undefined;
@@ -94,6 +98,8 @@ export default function InsightsScreen() {
   const [animToken, setAnimToken] = useState(0);
   const [barTrackWidth, setBarTrackWidth] = useState(0);
   const [weekChartWidth, setWeekChartWidth] = useState(0);
+  const [selectedWeekStart, setSelectedWeekStart] = useState<number | null>(null);
+  const [activeHighlightIndex, setActiveHighlightIndex] = useState(0);
 
   const [detailMemory, setDetailMemory] = useState<Memory | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -109,6 +115,11 @@ export default function InsightsScreen() {
     () => Math.max(1, ...weeklyNew.map((w) => w.newPlaceCount)),
     [weeklyNew]
   );
+  const selectedWeekBucket = useMemo(
+    () => weeklyNew.find((bucket) => bucket.weekStart === selectedWeekStart) ?? weeklyNew[weeklyNew.length - 1] ?? null,
+    [selectedWeekStart, weeklyNew]
+  );
+  const activeHighlight = topMemories[activeHighlightIndex] ?? null;
 
   const placeBarAnims = useStaggeredBarAnimation(topPlacesWeek.length, animToken, hasEnoughData);
   const hourAnims = useStaggeredBarAnimation(24, animToken, hasEnoughData);
@@ -134,6 +145,21 @@ export default function InsightsScreen() {
     setHourly(hours);
     setTopMemories(highlights);
     setWeeklyNew(weeks);
+    setSelectedWeekStart((current) => {
+      if (weeks.length === 0) {
+        return null;
+      }
+      if (current && weeks.some((bucket) => bucket.weekStart === current)) {
+        return current;
+      }
+      return weeks[weeks.length - 1].weekStart;
+    });
+    setActiveHighlightIndex((current) => {
+      if (highlights.length === 0) {
+        return 0;
+      }
+      return Math.min(current, highlights.length - 1);
+    });
     setAnimToken((t) => t + 1);
   }, []);
 
@@ -156,6 +182,18 @@ export default function InsightsScreen() {
       navigation.navigate('Places', { openPlaceName: placeName });
     },
     [navigation]
+  );
+
+  const onHighlightsMomentumEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (topMemories.length === 0) {
+        return;
+      }
+      const nextIndex = Math.round(event.nativeEvent.contentOffset.x / (HIGHLIGHT_CARD_WIDTH + HIGHLIGHT_CARD_GAP));
+      const boundedIndex = Math.min(Math.max(nextIndex, 0), topMemories.length - 1);
+      setActiveHighlightIndex(boundedIndex);
+    },
+    [topMemories.length]
   );
 
   const weekRangeLabel = useMemo(() => {
@@ -294,18 +332,28 @@ export default function InsightsScreen() {
 
           <View style={styles.block}>
             <SectionTitle>Most memorable moments</SectionTitle>
-            <SectionSubtitle>Ranked by how much you marked them mattering</SectionSubtitle>
+            <SectionSubtitle>Swipe through your standout moments and tap any card to open the full memory</SectionSubtitle>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.highlightsRow}
+              snapToInterval={HIGHLIGHT_CARD_WIDTH + HIGHLIGHT_CARD_GAP}
+              decelerationRate="fast"
+              disableIntervalMomentum
+              onMomentumScrollEnd={onHighlightsMomentumEnd}
             >
               {topMemories.map((m) => {
                 const score = Math.min(1, Math.max(0, m.importanceScore));
                 return (
                   <TouchableOpacity
                     key={m.id}
-                    style={[styles.highlightCard, { borderColor: theme.colors.border.subtle, backgroundColor: theme.colors.bg.elevated }]}
+                    style={[
+                      styles.highlightCard,
+                      {
+                        borderColor: theme.colors.border.subtle,
+                        backgroundColor: theme.colors.bg.elevated,
+                      },
+                    ]}
                     onPress={() => {
                       setDetailMemory(m);
                       setDetailOpen(true);
@@ -343,11 +391,47 @@ export default function InsightsScreen() {
                 );
               })}
             </ScrollView>
+            {activeHighlight ? (
+              <View
+                style={[
+                  styles.highlightMetaCard,
+                  {
+                    backgroundColor: theme.colors.bg.surface,
+                    borderColor: theme.colors.border.subtle,
+                  },
+                ]}
+              >
+                <View style={styles.highlightDots}>
+                  {topMemories.map((memory, index) => (
+                    <View
+                      key={memory.id}
+                      style={[
+                        styles.highlightDot,
+                        {
+                          backgroundColor:
+                            index === activeHighlightIndex
+                              ? theme.colors.brand.primary
+                              : theme.colors.border.subtle,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={[styles.highlightMetaTitle, { color: theme.colors.text.primary }]}>
+                  {`Viewing #${activeHighlightIndex + 1} of ${topMemories.length}: ${activeHighlight.placeName}`}
+                </Text>
+                <Text style={[styles.highlightMetaBody, { color: theme.colors.text.secondary }]}>
+                  {`Saved ${formatMemoryDateTime(activeHighlight.timestamp)} with ${Math.round(
+                    Math.min(1, Math.max(0, activeHighlight.importanceScore)) * 100
+                  )}% resonance.`}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           <View style={[styles.block, { marginBottom: 32 }]}>
             <SectionTitle>Places over time</SectionTitle>
-            <SectionSubtitle>New places you had not logged before, by week</SectionSubtitle>
+            <SectionSubtitle>Tap a bar to inspect how many first-time places were logged that week</SectionSubtitle>
             <View style={[styles.card, { backgroundColor: theme.colors.bg.surface, borderColor: theme.colors.border.subtle }]}>
               <View style={styles.weekChart} onLayout={onWeekChartLayout}>
                 {weeklyNew.map((w, i) => {
@@ -358,25 +442,65 @@ export default function InsightsScreen() {
                     outputRange: [0, Math.max(6, targetH)],
                   });
                   const colW = weekChartWidth > 0 ? weekChartWidth / 8 - 6 : 8;
+                  const isSelected = selectedWeekBucket?.weekStart === w.weekStart;
                   return (
-                    <View key={`${w.weekStart}`} style={[styles.weekCol, { width: Math.max(10, colW) }]}>
+                    <TouchableOpacity
+                      key={`${w.weekStart}`}
+                      style={[styles.weekCol, { width: Math.max(10, colW) }]}
+                      onPress={() => setSelectedWeekStart(w.weekStart)}
+                      activeOpacity={0.85}
+                    >
+                      <Text
+                        style={[
+                          styles.weekValue,
+                          {
+                            color: isSelected ? theme.colors.text.primary : theme.colors.text.tertiary,
+                          },
+                        ]}
+                      >
+                        {w.newPlaceCount}
+                      </Text>
                       <Animated.View
                         style={[
                           styles.weekBar,
                           {
                             height: colH,
-                            backgroundColor: theme.colors.accent.teal,
-                            borderColor: theme.colors.accent.teal,
+                            backgroundColor: isSelected ? theme.colors.accent.amber : theme.colors.accent.teal,
+                            borderColor: isSelected ? theme.colors.accent.amber : theme.colors.accent.teal,
+                            opacity: isSelected ? 1 : 0.82,
                           },
                         ]}
                       />
                       <Text style={[styles.weekLabel, { color: theme.colors.text.tertiary }]} numberOfLines={1}>
                         {w.label}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
+              {selectedWeekBucket ? (
+                <View
+                  style={[
+                    styles.weekInsightCard,
+                    {
+                      backgroundColor: theme.colors.bg.elevated,
+                      borderColor: theme.colors.border.subtle,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.weekInsightTitle, { color: theme.colors.text.primary }]}>
+                    {`${selectedWeekBucket.newPlaceCount} new place${
+                      selectedWeekBucket.newPlaceCount === 1 ? '' : 's'
+                    } during the week of ${format(new Date(selectedWeekBucket.weekStart), 'MMM d')}`}
+                  </Text>
+                  <Text style={[styles.weekInsightBody, { color: theme.colors.text.secondary }]}>
+                    {`${format(new Date(selectedWeekBucket.weekStart), 'MMM d')} to ${format(
+                      new Date(selectedWeekBucket.weekEnd),
+                      'MMM d'
+                    )} tracked first-time visits in your memory stream.`}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </ScrollView>
@@ -489,9 +613,10 @@ const styles = StyleSheet.create({
   highlightsRow: {
     gap: 12,
     paddingVertical: 4,
+    paddingRight: 24,
   },
   highlightCard: {
-    width: 220,
+    width: HIGHLIGHT_CARD_WIDTH,
     minHeight: 132,
     borderRadius: 16,
     borderWidth: 0.5,
@@ -522,16 +647,47 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  highlightMetaCard: {
+    marginTop: 12,
+    borderRadius: 14,
+    borderWidth: 0.5,
+    padding: 14,
+    gap: 8,
+  },
+  highlightDots: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  highlightDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  highlightMetaTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  highlightMetaBody: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
   weekChart: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    height: 148,
+    height: 164,
     paddingTop: 8,
   },
   weekCol: {
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 8,
+  },
+  weekValue: {
+    minHeight: 16,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   weekBar: {
     width: '100%',
@@ -543,5 +699,20 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '500',
     textAlign: 'center',
+  },
+  weekInsightCard: {
+    marginTop: 16,
+    borderRadius: 14,
+    borderWidth: 0.5,
+    padding: 14,
+    gap: 6,
+  },
+  weekInsightTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  weekInsightBody: {
+    fontSize: 13,
+    lineHeight: 19,
   },
 });
