@@ -1,3 +1,4 @@
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
@@ -21,6 +22,8 @@ type PlaceGroupMode = 'all' | 'frequent' | 'recent' | 'manual';
 
 export default function PlacesScreen() {
   const { theme } = useTheme();
+  const route = useRoute();
+  const navigation = useNavigation();
   const [places, setPlaces] = useState<PlaceRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<PlaceRow | null>(null);
@@ -39,6 +42,39 @@ export default function PlacesScreen() {
   useEffect(() => {
     loadPlaces();
   }, [loadPlaces]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const openPlaceName = (route.params as { openPlaceName?: string } | undefined)?.openPlaceName;
+      if (!openPlaceName) {
+        return undefined;
+      }
+
+      let cancelled = false;
+
+      void (async () => {
+        const all = await getAllPlaces();
+        if (cancelled) {
+          return;
+        }
+        const match = all.find((p) => p.name === openPlaceName);
+        if (match) {
+          setSelectedPlace(match);
+          const memories = await getMemoriesForPlace(match.name);
+          if (cancelled) {
+            return;
+          }
+          setPlaceMemories(memories);
+          setPlaceSheetVisible(true);
+        }
+        navigation.setParams({ openPlaceName: undefined } as never);
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [navigation, route.params])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

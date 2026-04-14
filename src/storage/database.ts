@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { endOfWeek, startOfWeek, subWeeks, format } from 'date-fns';
 import { getMemoryKind, Memory, Place } from '../models/Memory';
 import {
   MEMORY_DEDUP_RADIUS_METERS,
@@ -241,6 +242,112 @@ export async function getMemoriesForDate(date: string): Promise<Memory[]> {
     [start.getTime(), end.getTime()]
   );
 
+  return rows.map(mapMemoryRow);
+}
+
+export async function getMemoriesForDateRange(startTs: number, endTs: number): Promise<Memory[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<any>(
+    'SELECT * FROM memories WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp DESC',
+    [startTs, endTs]
+  );
+  return rows.map(mapMemoryRow);
+}
+
+export async function getHourlyDistribution(): Promise<number[]> {
+  const db = await getDatabase();
+  const counts = new Array(24).fill(0);
+  const rows = await db.getAllAsync<{ hour: string; c: number }>(
+    `SELECT strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS hour, COUNT(*) AS c
+     FROM memories
+     GROUP BY hour`
+  );
+  for (const row of rows) {
+    const h = Number.parseInt(row.hour, 10);
+    if (!Number.isNaN(h) && h >= 0 && h < 24) {
+      counts[h] = row.c;
+    }
+  }
+  return counts;
+}
+
+export type PlaceVisitStat = {
+  placeName: string;
+  visitCount: number;
+};
+
+export async function getTopPlacesByVisits(
+  limit: number,
+  startTs?: number,
+  endTs?: number
+): Promise<PlaceVisitStat[]> {
+  const db = await getDatabase();
+  if (startTs !== undefined && endTs !== undefined) {
+    const rows = await db.getAllAsync<{ place_name: string; cnt: number }>(
+      `SELECT place_name, COUNT(*) AS cnt
+       FROM memories
+       WHERE timestamp >= ? AND timestamp <= ?
+       GROUP BY place_name
+       ORDER BY cnt DESC
+       LIMIT ?`,
+      [startTs, endTs, limit]
+    );
+    return rows.map((row) => ({ placeName: row.place_name, visitCount: row.cnt }));
+  }
+
+  const rows = await db.getAllAsync<{ place_name: string; cnt: number }>(
+    `SELECT place_name, COUNT(*) AS cnt
+     FROM memories
+     GROUP BY place_name
+     ORDER BY cnt DESC
+     LIMIT ?`,
+    [limit]
+  );
+  return rows.map((row) => ({ placeName: row.place_name, visitCount: row.cnt }));
+}
+
+export type WeeklyNewPlaceBucket = {
+  weekStart: number;
+  weekEnd: number;
+  label: string;
+  newPlaceCount: number;
+};
+
+export async function getWeeklyNewPlaces(weeksBack: number): Promise<WeeklyNewPlaceBucket[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ first_ts: number }>(
+    'SELECT MIN(timestamp) AS first_ts FROM memories GROUP BY place_name'
+  );
+
+  const buckets: WeeklyNewPlaceBucket[] = [];
+  const n = Math.max(1, Math.floor(weeksBack));
+
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const anchor = subWeeks(new Date(), i);
+    const start = startOfWeek(anchor, { weekStartsOn: 1 });
+    const end = endOfWeek(anchor, { weekStartsOn: 1 });
+    const startTs = start.getTime();
+    const endTs = end.getTime();
+
+    const newPlaceCount = rows.filter((r) => r.first_ts >= startTs && r.first_ts <= endTs).length;
+
+    buckets.push({
+      weekStart: startTs,
+      weekEnd: endTs,
+      label: format(start, 'MMM d'),
+      newPlaceCount,
+    });
+  }
+
+  return buckets;
+}
+
+export async function getTopMemoriesByImportance(limit: number): Promise<Memory[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<any>(
+    'SELECT * FROM memories ORDER BY importance_score DESC, timestamp DESC LIMIT ?',
+    [limit]
+  );
   return rows.map(mapMemoryRow);
 }
 
