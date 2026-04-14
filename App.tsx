@@ -31,12 +31,6 @@ function TabBarIcon({ label, active }: { label: string; active: boolean }) {
           <Path d="M5 14h14" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
           <Path d="M5 18.5h10" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
         </Svg>
-<<<<<<< HEAD
-      ) : label === 'Insights' ? (
-        <BarChartIcon color={color} size={24} />
-      ) : label === 'Archive' ? (
-        <ArchiveIcon color={color} size={24} />
-      ) : (
       ) : label === 'Places' ? (
         <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
           <Path
