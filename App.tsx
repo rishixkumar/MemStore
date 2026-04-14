@@ -12,7 +12,8 @@ import DigestHistoryScreen from './src/ui/screens/DigestHistoryScreen';
 import CaptureSheet from './src/ui/components/CaptureSheet';
 import { ThemeProvider, useTheme } from './src/ui/theme';
 import { logger } from './src/utils/logger';
-import { ArchiveIcon } from './src/ui/components/Icons';
+import { ArchiveIcon, MapTabIcon } from './src/ui/components/Icons';
+import MapScreen from './src/ui/screens/MapScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -29,9 +30,7 @@ function TabBarIcon({ label, active }: { label: string; active: boolean }) {
           <Path d="M5 14h14" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
           <Path d="M5 18.5h10" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
         </Svg>
-      ) : label === 'Archive' ? (
-        <ArchiveIcon color={color} size={24} />
-      ) : (
+      ) : label === 'Places' ? (
         <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
           <Path
             d="M14 6.5c-2.9 0-5.25 2.35-5.25 5.25 0 3.8 5.25 9.75 5.25 9.75s5.25-5.95 5.25-9.75c0-2.9-2.35-5.25-5.25-5.25Z"
@@ -49,6 +48,10 @@ function TabBarIcon({ label, active }: { label: string; active: boolean }) {
             strokeWidth={1.6}
           />
         </Svg>
+      ) : label === 'Map' ? (
+        <MapTabIcon color={color} size={28} />
+      ) : (
+        <ArchiveIcon color={color} size={24} />
       )}
     </View>
   );
@@ -110,6 +113,9 @@ function AppShell() {
           {() => <TimelineScreen key={refreshKey} onOpenCapture={() => setCaptureVisible(true)} />}
         </Tab.Screen>
         <Tab.Screen name="Places" component={PlacesScreen} />
+        <Tab.Screen name="Map">
+          {() => <MapScreen key={refreshKey} />}
+        </Tab.Screen>
         <Tab.Screen name="Archive" component={DigestHistoryScreen} />
       </Tab.Navigator>
 

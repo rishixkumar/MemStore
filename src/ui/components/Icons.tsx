@@ -165,6 +165,36 @@ export function TrashIcon({
   );
 }
 
+/** Tab bar: globe + grid meridians, stroke-only to match Timeline / Places icons. */
+export function MapTabIcon({
+  color,
+  size = 28,
+}: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 28 28" fill="none">
+      <Circle cx={14} cy={14} r={9} stroke={color} strokeWidth={2} />
+      <Path
+        d="M14 5c2.2 2.6 3.5 5.8 3.5 9s-1.3 6.4-3.5 9M14 5c-2.2 2.6-3.5 5.8-3.5 9s1.3 6.4 3.5 9"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M5.5 11.5h17M5.5 16.5h17"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M8 7.5c2.2 1.5 4.7 2.3 6 2.3s3.8-.8 6-2.3M8 20.5c2.2-1.5 4.7-2.3 6-2.3s3.8.8 6 2.3"
+        stroke={color}
+        strokeWidth={1.4}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
 export function ArchiveIcon({
   color,
   size = 18,

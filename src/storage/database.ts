@@ -232,6 +232,17 @@ export async function getAllMemories(): Promise<Memory[]> {
   return rows.map(mapMemoryRow);
 }
 
+/** Memories with a real coordinate (excludes 0,0 placeholder rows). */
+export async function getAllMemoriesWithCoords(): Promise<Memory[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<any>(
+    `SELECT * FROM memories
+     WHERE ABS(latitude) > 1e-8 AND ABS(longitude) > 1e-8
+     ORDER BY timestamp DESC`
+  );
+  return rows.map(mapMemoryRow);
+}
+
 export async function getMemoriesForDate(date: string): Promise<Memory[]> {
   const db = await getDatabase();
   const { start, end } = getDayRangeForDateKey(date);
