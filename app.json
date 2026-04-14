@@ -13,6 +13,7 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Ambient Memory captures the places you visit so you can remember your life without any effort.",
         "NSLocationAlwaysUsageDescription": "Ambient Memory needs background location to passively capture memories throughout your day.",
         "NSLocationWhenInUseUsageDescription": "Ambient Memory uses your location to name and remember the places you visit.",
+        "NSPhotoLibraryAddUsageDescription": "Ambient Memory saves share images to your library when you choose Save to photos.",
         "UIBackgroundModes": ["location", "fetch"]
       }
     },

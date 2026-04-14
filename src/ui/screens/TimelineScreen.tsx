@@ -36,6 +36,7 @@ import { GearIcon, RefreshIcon, SearchIcon } from '../components/Icons';
 import DigestSkeleton from '../components/timeline/DigestSkeleton';
 import MemoryCard from '../components/timeline/MemoryCard';
 import OnThisDayCard from '../components/timeline/OnThisDayCard';
+import ShareMemoryModal from '../components/timeline/ShareMemoryModal';
 import ProviderBadge from '../components/timeline/ProviderBadge';
 import StatCard from '../components/timeline/StatCard';
 import { useTheme } from '../theme';
@@ -134,6 +135,8 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
   const [timelineMode, setTimelineMode] = useState<TimelineLayoutMode>('days');
   const [placeSortOrder, setPlaceSortOrder] = useState<'desc' | 'asc'>('desc');
   const [collapsedPlaces, setCollapsedPlaces] = useState<Record<string, boolean>>({});
+  const [shareMemory, setShareMemory] = useState<Memory | null>(null);
+  const [shareCaption, setShareCaption] = useState('');
   const shimmer = useRef(new Animated.Value(0.15)).current;
 
   const getImportanceAccent = useCallback(
@@ -323,6 +326,22 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
     setMemorySheetVisible(true);
   };
 
+  const openShareForMemory = useCallback(async (memory: Memory) => {
+    const caption = await Promise.race([
+      generateMemoryCaption(memory.placeName, memory.timestamp).catch(() => ''),
+      new Promise<string>((resolve) => {
+        setTimeout(() => resolve(''), 3000);
+      }),
+    ]);
+    setShareCaption(typeof caption === 'string' ? caption : '');
+    setShareMemory(memory);
+  }, []);
+
+  const closeShareMemory = useCallback(() => {
+    setShareMemory(null);
+    setShareCaption('');
+  }, []);
+
   const togglePlaceCollapsed = (placeName: string) => {
     setCollapsedPlaces((current) => ({
       ...current,
@@ -335,6 +354,9 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
       memory={item}
       accentColor={getImportanceAccent(item.importanceScore, getMemoryKind(item))}
       onPress={() => openMemory(item)}
+      onLongPress={() => {
+        void openShareForMemory(item);
+      }}
     />
   );
 
@@ -659,6 +681,13 @@ export default function TimelineScreen({ onOpenCapture }: TimelineScreenProps) {
             await loadSearch(searchText);
           }
         }}
+      />
+
+      <ShareMemoryModal
+        visible={shareMemory !== null}
+        memory={shareMemory}
+        caption={shareCaption}
+        onClose={closeShareMemory}
       />
     </View>
   );
