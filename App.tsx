@@ -8,11 +8,12 @@ import { initializeDatabase } from './src/storage/database';
 import { requestPermissionsAndStart } from './src/sensing/locationService';
 import TimelineScreen from './src/ui/screens/TimelineScreen';
 import PlacesScreen from './src/ui/screens/PlacesScreen';
+import InsightsScreen from './src/ui/screens/InsightsScreen';
 import DigestHistoryScreen from './src/ui/screens/DigestHistoryScreen';
 import CaptureSheet from './src/ui/components/CaptureSheet';
 import { ThemeProvider, useTheme } from './src/ui/theme';
 import { logger } from './src/utils/logger';
-import { ArchiveIcon, MapTabIcon } from './src/ui/components/Icons';
+import { ArchiveIcon, BarChartIcon, MapTabIcon } from './src/ui/components/Icons';
 import MapScreen from './src/ui/screens/MapScreen';
 
 const Tab = createBottomTabNavigator();
@@ -30,6 +31,12 @@ function TabBarIcon({ label, active }: { label: string; active: boolean }) {
           <Path d="M5 14h14" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
           <Path d="M5 18.5h10" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
         </Svg>
+<<<<<<< HEAD
+      ) : label === 'Insights' ? (
+        <BarChartIcon color={color} size={24} />
+      ) : label === 'Archive' ? (
+        <ArchiveIcon color={color} size={24} />
+      ) : (
       ) : label === 'Places' ? (
         <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
           <Path
@@ -50,6 +57,8 @@ function TabBarIcon({ label, active }: { label: string; active: boolean }) {
         </Svg>
       ) : label === 'Map' ? (
         <MapTabIcon color={color} size={28} />
+      ) : label === 'Insights' ? (
+        <BarChartIcon color={color} size={24} />
       ) : (
         <ArchiveIcon color={color} size={24} />
       )}
@@ -116,6 +125,7 @@ function AppShell() {
         <Tab.Screen name="Map">
           {() => <MapScreen key={refreshKey} />}
         </Tab.Screen>
+        <Tab.Screen name="Insights" component={InsightsScreen} />
         <Tab.Screen name="Archive" component={DigestHistoryScreen} />
       </Tab.Navigator>
 

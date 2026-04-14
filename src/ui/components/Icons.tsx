@@ -195,6 +195,22 @@ export function MapTabIcon({
   );
 }
 
+export function BarChartIcon({
+  color,
+  size = 24,
+}: IconProps) {
+  const { theme } = useTheme();
+  const strokeColor = color || theme.colors.text.primary;
+
+  return (
+    <Svg width={size} height={size} viewBox="0 0 28 28" fill="none">
+      <Rect x={5} y={16} width={4.5} height={8} rx={1.2} fill={strokeColor} opacity={0.92} />
+      <Rect x={11.75} y={11} width={4.5} height={13} rx={1.2} fill={strokeColor} opacity={0.92} />
+      <Rect x={18.5} y={13.5} width={4.5} height={10.5} rx={1.2} fill={strokeColor} opacity={0.92} />
+    </Svg>
+  );
+}
+
 export function ArchiveIcon({
   color,
   size = 18,
